@@ -8,7 +8,7 @@ import { applyStage, SPAWNS } from './stage.js';
 import { createBotMemory, botThink } from './bots.js';
 import { mulberry32 } from './rng.js';
 
-const BOT_WEAPONS = ['shooter', 'roller', 'charger'];
+const BOT_WEAPONS = ['shooter', 'roller', 'charger', 'slosher', 'spinner', 'blaster']; // v3: 6種
 
 export function createMatch({ seed = 1, playerWeapon = 'shooter', difficulty = CONFIG.BOT.DEFAULT, playerAuto = false } = {}) {
   const g = CONFIG.GRID;
@@ -40,17 +40,20 @@ export function createMatch({ seed = 1, playerWeapon = 'shooter', difficulty = C
     grid, entities, bullets: [], botMems,
     rng: mulberry32(seed), difficulty, playerAuto,
     result: null,
+    events: [], // v3: 1tick分の効果音/エフェクト用イベント
   };
 }
 
 export function tick(state, playerInput = NO_INPUT, dt = 1 / 60) {
   if (state.phase !== 'PLAY') return; // C-005: RESULT後は状態不変
+  if (state.events) state.events.length = 0; // v3: イベントは1tickで消費
 
   for (const e of state.entities) {
     const input = e.isPlayer ? playerInput : botThink(e, botMem(state, e), state, state.rng, dt);
     updateEntity(e, input, state.grid, dt);
+    if (e.justJumped) state.events?.push({ type: 'jump', x: e.x, y: e.y, team: e.team });
     if (e.state === 'ALIVE') {
-      if (input.special) trySpecial(e, state);
+      if (input.special && trySpecial(e, state)) state.events?.push({ type: 'special', x: e.x, y: e.y, team: e.team });
       updateWeapon(e, input, state, dt);
     }
   }

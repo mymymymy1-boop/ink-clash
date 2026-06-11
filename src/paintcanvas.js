@@ -28,10 +28,15 @@ export function createPaintCanvas() {
   }
 
   function paintCell(g, idx, v) {
+    // v3: 矩形でなく重なり合う円で「インクのしぶき」感を出す（座標ハッシュで決定論）
     const cx = idx % g.cols, cy = (idx / g.cols) | 0;
     const h = ((cx * 73856093) ^ (cy * 19349663)) >>> 0;
+    const px = cx * g.cell + g.cell / 2 + ((h & 3) - 1.5);
+    const py = cy * g.cell + g.cell / 2 + (((h >> 2) & 3) - 1.5);
     ctx.fillStyle = (h & 7) < 2 ? COLORS.inkDark[v] : COLORS.ink[v];
-    ctx.fillRect(cx * g.cell, cy * g.cell, g.cell, g.cell);
+    ctx.beginPath();
+    ctx.arc(px, py, g.cell * 0.78, 0, Math.PI * 2);
+    ctx.fill();
   }
 
   // 差分反映。塗り更新があれば true（→ texture.needsUpdate）

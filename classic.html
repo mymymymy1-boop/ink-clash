@@ -120,6 +120,12 @@ const CONFIG = {
   WORLD: { W: 1280, H: 720 },
   GRID: { CELL: 8, COLS: 160, ROWS: 90 },
   MATCH: { DURATION: 180, TEAM_A: 1, TEAM_B: 2, TEAM_SIZE: 4 },
+  TERRAIN: { // v3: 高低差（FR-JMP/FR-LVL）
+    PLATFORM_H: 26,      // 台1段の高さ
+    WALL_H: 44,          // 壁(OBSTACLE)の高さ＝弾はこれ未満なら遮られる
+    CLIMB_MARGIN: 6,     // この高さ差まで登り許容
+  },
+  JUMP: { V0: 210, GRAVITY: 600 }, // 初速210/重力600 → 頂点約36>台26で登れる
   PLAYER: {
     HP: 100, INK: 100, SPEED: 150, RADIUS: 13,
     SWIM_MULT: 1.8,            // FR-INK-002
@@ -155,6 +161,22 @@ const CONFIG = {
       inkCostFull: 18, chargeSpeedMult: 0.5,
       bulletSpeed: 1400, paintR: 12, dropletEvery: 40,
     },
+    slosher: { // v3 FR-WPN-004: 山なりに投げて壁を越える大塗り
+      kind: 'slosher', name: 'バケットスロッシャー',
+      interval: 0.55, dmg: 70, range: 300, inkCost: 7,
+      bulletSpeed: 340, lobV0: 150, paintR: 30, dropletEvery: 70,
+    },
+    spinner: { // v3 FR-WPN-005: スピンアップ後に高速連射
+      kind: 'spinner', name: 'ガトリングスピナー',
+      spinupTime: 0.8, interval: 0.06, dmg: 30, range: 310,
+      inkCost: 0.7, bulletSpeed: 650, paintR: 14, dropletEvery: 52,
+      spinSpeedMult: 0.6,
+    },
+    blaster: { // v3 FR-WPN-006: 着弾爆発・範囲ダメージ
+      kind: 'blaster', name: 'バーストブラスター',
+      interval: 0.7, dmg: 100, splashDmg: 50, splashR: 55,
+      range: 230, inkCost: 10, bulletSpeed: 480, paintR: 26, dropletEvery: 90,
+    },
   },
   BOT: { // FR-BOT-001/002 (REV-R1-006/102)
     DIFFICULTIES: {
@@ -183,6 +205,7 @@ class PaintGrid {
   constructor(cols, rows, cell) {
     this.cols = cols; this.rows = rows; this.cell = cell;
     this.cells = new Uint8Array(cols * rows);
+    this.levels = new Uint8Array(cols * rows); // v3: 高さレベル(0=地面,1=台)
     this.counts = { 1: 0, 2: 0 };
     this.obstacleCount = 0;
     this.dirty = []; // 差分セルindex（renderer向け）
@@ -199,6 +222,21 @@ class PaintGrid {
   }
 
   isObstacleAt(px, py) { return this.valueAt(px, py) === OBSTACLE; }
+
+  // v3: セルの高さレベル（範囲外=0）
+  levelAt(px, py) {
+    const cx = Math.floor(px / this.cell), cy = Math.floor(py / this.cell);
+    if (!this.inBounds(cx, cy)) return 0;
+    return this.levels[this.idx(cx, cy)];
+  }
+
+  setPlatformRect(px, py, w, h, level = 1) { // 台（塗れる・登れる高所）
+    const c0 = Math.floor(px / this.cell), r0 = Math.floor(py / this.cell);
+    const c1 = Math.ceil((px + w) / this.cell), r1 = Math.ceil((py + h) / this.cell);
+    for (let cy = r0; cy < r1; cy++) for (let cx = c0; cx < c1; cx++) {
+      if (this.inBounds(cx, cy)) this.levels[this.idx(cx, cy)] = level;
+    }
+  }
 
   setObstacleRect(px, py, w, h) { // ステージ構築用（ピクセル矩形）
     const c0 = Math.floor(px / this.cell), r0 = Math.floor(py / this.cell);
@@ -259,7 +297,7 @@ class PaintGrid {
 }
 
 // ===== src/core/stage.js =====
-// ステージ定義: 左右対称マップ（SDD stage.js）
+// ステージ定義 v3: 左右対称・壁＋高低差（FR-LVL-001）
 
 
 const SPAWNS = {
@@ -267,19 +305,27 @@ const SPAWNS = {
   2: { x: CONFIG.WORLD.W - 70, y: 360 },
 };
 
-// 障害物矩形（px）。中央ブロック+対称4ブロック
-const RECTS = [
-  [590, 300, 100, 120],
-  [380, 140, 96, 72], [804, 140, 96, 72],
-  [380, 508, 96, 72], [804, 508, 96, 72],
-  [240, 320, 64, 80], [976, 320, 64, 80],
+// 壁（OBSTACLE: 通行・弾とも遮断）
+const WALL_RECTS = [
+  [600, 250, 80, 60], [600, 410, 80, 60],          // 中央の2枚壁
+  [330, 90, 70, 70], [880, 90, 70, 70],            // 上ルートの遮蔽
+  [330, 560, 70, 70], [880, 560, 70, 70],          // 下ルートの遮蔽
+];
+
+// 台（PLATFORM: 塗れる・ジャンプで登れる高所）
+const PLATFORM_RECTS = [
+  [560, 280, 160, 160],                            // 中央タワー（壁2枚の間）
+  [180, 280, 110, 160], [990, 280, 110, 160],      // 自陣前の見張り台
+  [500, 60, 280, 90], [500, 570, 280, 90],         // 上下の回廊
 ];
 
 function applyStage(grid) {
-  for (const [x, y, w, h] of RECTS) grid.setObstacleRect(x, y, w, h);
+  for (const [x, y, w, h] of WALL_RECTS) grid.setObstacleRect(x, y, w, h);
+  for (const [x, y, w, h] of PLATFORM_RECTS) grid.setPlatformRect(x, y, w, h, 1);
 }
 
-function obstacleRects() { return RECTS.map((r) => [...r]); }
+function obstacleRects() { return WALL_RECTS.map((r) => [...r]); }
+function platformRects() { return PLATFORM_RECTS.map((r) => [...r]); }
 
 // ===== src/core/entities.js =====
 // Entity: プレイヤー/ボット共通の状態と更新（DATA-002）
@@ -296,10 +342,11 @@ function createEntity({ id, team, x, y, weaponKind, isPlayer = false }) {
     swimming: false, aimX: 1, aimY: 0,
     cooldown: 0, charge: 0, charging: false,
     moving: false,
+    z: 0, vz: 0, grounded: true, spin: 0, // v3: 高さ・ジャンプ・スピナー回転
   };
 }
 
-const NO_INPUT = Object.freeze({ mx: 0, my: 0, aimX: 1, aimY: 0, fire: false, swim: false, special: false });
+const NO_INPUT = Object.freeze({ mx: 0, my: 0, aimX: 1, aimY: 0, fire: false, swim: false, special: false, jump: false });
 
 function clamp(v, lo, hi) { return v < lo ? lo : v > hi ? hi : v; }
 
@@ -320,14 +367,15 @@ function updateEntity(e, input, grid, dt) {
       e.state = 'ALIVE'; e.x = e.spawnX; e.y = e.spawnY;
       e.hp = P.HP; e.ink = P.INK; e.invulnT = P.INVULN_TIME;
       e.charge = 0; e.charging = false; e.swimming = false;
+      e.z = grid.levelAt(e.x, e.y) * CONFIG.TERRAIN.PLATFORM_H; e.vz = 0; e.grounded = true;
     }
     return;
   }
   if (e.invulnT > 0) e.invulnT = Math.max(0, e.invulnT - dt);
 
   const terrain = terrainFor(e, grid);
-  const onOwn = terrain === 'own';
-  const onEnemy = terrain === 'enemy';
+  const onOwn = terrain === 'own' && e.grounded;
+  const onEnemy = terrain === 'enemy' && e.grounded; // 空中は地形効果なし（v3）
 
   // スイム形態（効果は自インク上のみ）。C-007: スイム中は射撃不可（weapons.jsで参照）
   e.swimming = !!input.swim;
@@ -351,6 +399,7 @@ function updateEntity(e, input, grid, dt) {
   if (e.swimming && onOwn) mult = P.SWIM_MULT;
   else if (onEnemy) mult = P.ENEMY_INK_MULT;
   if (e.charging) mult *= CONFIG.WEAPONS.charger.chargeSpeedMult;
+  if (e.spin > 0 && e.weaponKind === 'spinner') mult *= CONFIG.WEAPONS.spinner.spinSpeedMult;
 
   let mx = input.mx, my = input.my;
   const ml = Math.hypot(mx, my);
@@ -360,6 +409,19 @@ function updateEntity(e, input, grid, dt) {
     const sp = P.SPEED * mult * dt;
     moveWithCollision(e, mx * sp, my * sp, grid);
   }
+
+  // ジャンプ＆重力（v3 FR-JMP-001）
+  if (input.jump && e.grounded && !e.swimming) {
+    e.vz = CONFIG.JUMP.V0; e.grounded = false; e.justJumped = true;
+  } else { e.justJumped = false; }
+  const groundH = grid.levelAt(e.x, e.y) * CONFIG.TERRAIN.PLATFORM_H;
+  if (!e.grounded || e.z !== groundH) {
+    e.vz -= CONFIG.JUMP.GRAVITY * dt;
+    e.z += e.vz * dt;
+    e.grounded = false;
+    if (e.z <= groundH && e.vz <= 0) { e.z = groundH; e.vz = 0; e.grounded = true; }
+  }
+  if (e.grounded && e.z < groundH) e.z = groundH; // 段差登り補助（CLIMB_MARGIN内）
 }
 
 // 軸別衝突（C-004: 境界はgrid側でobstacle扱い）
@@ -367,20 +429,20 @@ function moveWithCollision(e, dx, dy, grid) {
   const r = P.RADIUS;
   const W = CONFIG.WORLD.W, H = CONFIG.WORLD.H;
   const nx = clamp(e.x + dx, r, W - r);
-  if (!blocked(nx, e.y, r, grid, Math.sign(dx), 0)) e.x = nx;
+  if (!blocked(nx, e.y, r, grid, Math.sign(dx), 0, e.z)) e.x = nx;
   const ny = clamp(e.y + dy, r, H - r);
-  if (!blocked(e.x, ny, r, grid, 0, Math.sign(dy))) e.y = ny;
+  if (!blocked(e.x, ny, r, grid, 0, Math.sign(dy), e.z)) e.y = ny;
 }
 
-function blocked(x, y, r, grid, sx, sy) {
-  // 進行方向の縁3点をチェック
-  if (sx !== 0) {
-    const ex = x + sx * r;
-    return grid.isObstacleAt(ex, y) || grid.isObstacleAt(ex, y - r * 0.7) || grid.isObstacleAt(ex, y + r * 0.7);
-  }
-  if (sy !== 0) {
-    const ey = y + sy * r;
-    return grid.isObstacleAt(x, ey) || grid.isObstacleAt(x - r * 0.7, ey) || grid.isObstacleAt(x + r * 0.7, ey);
+function blocked(x, y, r, grid, sx, sy, z) {
+  // 進行方向の縁3点をチェック（壁 or 自分の高さより高い台の側面 = v3）
+  const pts = sx !== 0
+    ? [[x + sx * r, y], [x + sx * r, y - r * 0.7], [x + sx * r, y + r * 0.7]]
+    : [[x, y + sy * r], [x - r * 0.7, y + sy * r], [x + r * 0.7, y + sy * r]];
+  for (const [px, py] of pts) {
+    if (grid.isObstacleAt(px, py)) return true;
+    const h = grid.levelAt(px, py) * CONFIG.TERRAIN.PLATFORM_H;
+    if (h > z + CONFIG.TERRAIN.CLIMB_MARGIN) return true; // 高い台の側面
   }
   return false;
 }
@@ -440,37 +502,59 @@ function distToSegment(px, py, x1, y1, x2, y2) {
 }
 
 // ===== src/core/weapons.js =====
-// 武器3種＋弾（FR-WPN-001/002/003, FR-INK-001, C-007/C-008）
+// 武器6種＋高さ対応弾道（FR-WPN-001〜006, FR-INK-001, C-007/C-008, v3）
 
 
 
 
 const W = CONFIG.WEAPONS;
+const T = CONFIG.TERRAIN;
+const MUZZLE_H = 14;          // 銃口高さ（足元からのオフセット）
+const BULLET_GRAVITY = 210;   // 通常弾のゆるい落下（チャージャーは無重力）
 
-// 毎tick呼び出し。e=自エンティティ, input, state={grid,bullets,entities}
+// 毎tick呼び出し。e=自エンティティ, input, state={grid,bullets,entities,events?}
 function updateWeapon(e, input, state, dt) {
   if (e.state !== 'ALIVE') return;
   if (e.cooldown > 0) e.cooldown -= dt;
   const def = W[e.weaponKind];
 
-  if (def.kind === 'shooter') updateShooter(e, def, input, state);
+  if (def.kind === 'shooter') fireSimple(e, def, input, state, 0);
+  else if (def.kind === 'slosher') fireSimple(e, def, input, state, def.lobV0); // v3: 山なり
+  else if (def.kind === 'blaster') fireSimple(e, def, input, state, 0);
+  else if (def.kind === 'spinner') updateSpinner(e, def, input, state, dt);
   else if (def.kind === 'roller') updateRoller(e, def, input, state, dt);
   else if (def.kind === 'charger') updateCharger(e, def, input, state, dt);
 }
 
 function canAct(e) { return !e.swimming; } // C-007: スイム中は射撃・チャージ不可
 
-function updateShooter(e, def, input, state) {
+function fireSimple(e, def, input, state, vz0) {
   if (!input.fire || !canAct(e) || e.cooldown > 0) return;
   if (e.ink < def.inkCost) return; // FR-INK-001
   e.ink -= def.inkCost;
   e.cooldown = def.interval;
-  spawnBullet(state, e, def.bulletSpeed, def.dmg, def.range, def.paintR, def.dropletEvery);
+  // ブラスターは直進して射程端で爆発（重力なし）。シューター/スロッシャーは自然落下
+  spawnBullet(state, e, def, vz0, def.kind !== 'blaster');
+  emit(state, def.kind === 'blaster' ? 'shoot_heavy' : 'shoot', e.x, e.y, e.team);
+}
+
+function updateSpinner(e, def, input, state, dt) { // v3 FR-WPN-005
+  if (input.fire && canAct(e)) {
+    e.spin = Math.min(def.spinupTime, e.spin + dt);
+    if (e.spin >= def.spinupTime && e.cooldown <= 0 && e.ink >= def.inkCost) {
+      e.ink -= def.inkCost;
+      e.cooldown = def.interval;
+      spawnBullet(state, e, def, 0, true);
+      emit(state, 'shoot', e.x, e.y, e.team);
+    }
+  } else {
+    e.spin = Math.max(0, e.spin - dt * 2);
+  }
 }
 
 function updateRoller(e, def, input, state, dt) {
-  // 轢き塗り: 通常移動（非スイム）時のみ（FR-WPN-002 / C-007）
-  if (e.moving && !e.swimming && e.ink > 0) {
+  // 轢き塗り: 通常移動（非スイム・接地時のみ v3）（FR-WPN-002 / C-007）
+  if (e.moving && !e.swimming && e.grounded && e.ink > 0) {
     const newly = state.grid.paintCircle(e.x, e.y, def.trailW / 2, e.team);
     if (newly > 0) addSP(e, newly);
     e.ink = Math.max(0, e.ink - def.inkCostTrail * dt);
@@ -483,18 +567,19 @@ function updateRoller(e, def, input, state, dt) {
   const sx = e.x + e.aimX * 50, sy = e.y + e.aimY * 50;
   const newly = state.grid.paintCircle(sx, sy, def.swingPaintR, e.team);
   if (newly > 0) addSP(e, newly);
+  emit(state, 'swing', e.x, e.y, e.team);
   for (const t of state.entities) {
     if (t.team === e.team || t.state !== 'ALIVE') continue;
     const dx = t.x - e.x, dy = t.y - e.y;
     const d = Math.hypot(dx, dy);
-    if (d <= def.swingRange && (dx * e.aimX + dy * e.aimY) / (d || 1) > 0.3) {
-      damageEntity(t, def.swingDmg);
+    if (d <= def.swingRange && (dx * e.aimX + dy * e.aimY) / (d || 1) > 0.3 && Math.abs(t.z - e.z) < T.PLATFORM_H) {
+      if (damageEntity(t, def.swingDmg)) emit(state, 'splat', t.x, t.y, t.team);
     }
   }
 }
 
 function updateCharger(e, def, input, state, dt) {
-  if (e.swimming) { e.charge = 0; e.charging = false; return; } // REV-R1-005: スイムでチャージ破棄
+  if (e.swimming) { e.charge = 0; e.charging = false; return; } // REV-R1-005
   if (input.fire) {
     e.charging = true;
     e.charge = Math.min(1, e.charge + dt / def.chargeTime);
@@ -502,7 +587,6 @@ function updateCharger(e, def, input, state, dt) {
     return;
   }
   if (!e.charging) return;
-  // リリース→発射
   const c = e.charge;
   e.charging = false; e.charge = 0;
   const cost = def.inkCostFull * Math.max(0.3, c);
@@ -510,56 +594,92 @@ function updateCharger(e, def, input, state, dt) {
   e.ink -= cost;
   const range = def.maxRange * (def.rangeBase + (1 - def.rangeBase) * c); // FR-WPN-003
   const dmg = c >= 1 ? def.fullDmg : def.partialDmg;
-  spawnBullet(state, e, def.bulletSpeed, dmg, range, def.paintR, def.dropletEvery);
+  spawnBullet(state, e, { ...def, dmg, range }, 0, false); // 無重力レーザー
+  emit(state, 'laser', e.x, e.y, e.team);
 }
 
-function spawnBullet(state, e, speed, dmg, range, paintR, dropletEvery) {
+function spawnBullet(state, e, def, vz0, gravity) {
   state.bullets.push({
-    team: e.team, ownerId: e.id,
+    team: e.team, ownerId: e.id, kind: def.kind,
     x: e.x + e.aimX * (CONFIG.PLAYER.RADIUS + 2),
     y: e.y + e.aimY * (CONFIG.PLAYER.RADIUS + 2),
-    vx: e.aimX * speed, vy: e.aimY * speed,
-    dmg, paintR, range, traveled: 0, dropletAcc: 0, dropletEvery,
+    vx: e.aimX * def.bulletSpeed, vy: e.aimY * def.bulletSpeed,
+    h: e.z + MUZZLE_H, vz: vz0, gravity,
+    dmg: def.dmg, paintR: def.paintR, range: def.range,
+    splashDmg: def.splashDmg || 0, splashR: def.splashR || 0,
+    traveled: 0, dropletAcc: 0, dropletEvery: def.dropletEvery,
   });
 }
 
-// 弾の前進・衝突・着弾。C-008: 障害物セル到達で消滅・塗りなし
+// 弾の前進・衝突・着弾（v3: 高さ対応）。C-008: 遮蔽物で消滅・塗りなし
 function updateBullets(state, dt) {
   const { grid, bullets, entities } = state;
-  const SUB = 4; // 4px刻みで障害物・命中を検査
+  const SUB = 4;
   for (let i = bullets.length - 1; i >= 0; i--) {
     const b = bullets[i];
-    let dist = Math.hypot(b.vx, b.vy) * dt;
-    const ux = b.vx / (Math.hypot(b.vx, b.vy) || 1), uy = b.vy / (Math.hypot(b.vx, b.vy) || 1);
+    const speed = Math.hypot(b.vx, b.vy);
+    const ux = b.vx / (speed || 1), uy = b.vy / (speed || 1);
+    let dist = speed * dt;
     let removed = false;
     while (dist > 0 && !removed) {
       const step = Math.min(SUB, dist);
+      const stepT = step / speed;
       b.x += ux * step; b.y += uy * step;
+      if (b.gravity || b.vz !== 0) { b.h += b.vz * stepT; b.vz -= (b.gravity ? BULLET_GRAVITY : 0) * stepT; }
       b.traveled += step; b.dropletAcc += step;
       dist -= step;
-      if (grid.isObstacleAt(b.x, b.y)) { removed = true; break; } // C-008
-      // 飛沫塗り
+
+      // 壁: 弾の高さが壁より低ければ遮断（v3）
+      if (grid.isObstacleAt(b.x, b.y) && b.h < T.WALL_H) { removed = explodeOrDie(state, b, false); break; }
+      // 台の側面: 台より低い弾は遮断
+      const groundH = grid.levelAt(b.x, b.y) * T.PLATFORM_H;
+      if (b.h < groundH) { removed = explodeOrDie(state, b, false); break; }
+      // 接地（山なり弾・落下弾）
+      if ((b.gravity || b.vz !== 0) && b.h <= groundH + 1 && b.vz < 0) { removed = land(state, b); break; }
+
       if (b.dropletAcc >= b.dropletEvery) {
         b.dropletAcc = 0;
         creditPaint(state, b, grid.paintCircle(b.x, b.y, b.paintR * 0.55, b.team));
       }
-      // 命中判定
       for (const t of entities) {
         if (t.team === b.team || t.state !== 'ALIVE') continue;
-        if (Math.hypot(t.x - b.x, t.y - b.y) <= CONFIG.PLAYER.RADIUS + 3) {
-          damageEntity(t, b.dmg);
+        if (Math.hypot(t.x - b.x, t.y - b.y) <= CONFIG.PLAYER.RADIUS + 3 && Math.abs(t.z + MUZZLE_H - b.h) < 30) {
+          if (damageEntity(t, b.dmg)) emit(state, 'splat', t.x, t.y, t.team);
           creditPaint(state, b, grid.paintCircle(b.x, b.y, b.paintR * 0.8, b.team));
-          removed = true; break;
+          removed = explodeOrDie(state, b, true);
+          break;
         }
       }
-      if (!removed && b.traveled >= b.range) { // 着弾塗り
-        creditPaint(state, b, grid.paintCircle(b.x, b.y, b.paintR, b.team));
-        removed = true;
-      }
+      if (!removed && b.traveled >= b.range) { removed = land(state, b); }
     }
     if (removed) bullets.splice(i, 1);
   }
 }
+
+function land(state, b) {
+  creditPaint(state, b, state.grid.paintCircle(b.x, b.y, b.paintR, b.team));
+  emit(state, 'land', b.x, b.y, b.team);
+  if (b.splashR > 0) return explodeOrDie(state, b, false);
+  return true;
+}
+
+// ブラスター爆発（v3 FR-WPN-006）。directHit=trueなら直撃者以外に飛沫ダメージ
+function explodeOrDie(state, b, directHit) {
+  if (b.splashR > 0) {
+    creditPaint(state, b, state.grid.paintCircle(b.x, b.y, b.paintR, b.team));
+    emit(state, 'explode', b.x, b.y, b.team);
+    for (const t of state.entities) {
+      if (t.team === b.team || t.state !== 'ALIVE') continue;
+      const d = Math.hypot(t.x - b.x, t.y - b.y);
+      if (d <= b.splashR && Math.abs(t.z + MUZZLE_H - b.h) < 40) {
+        if (damageEntity(t, b.splashDmg)) emit(state, 'splat', t.x, t.y, t.team);
+      }
+    }
+  }
+  return true;
+}
+
+function emit(state, type, x, y, team) { state.events?.push({ type, x, y, team }); }
 
 function creditPaint(state, b, newly) {
   if (newly <= 0) return;
@@ -598,7 +718,7 @@ function botThink(bot, mem, state, rng, dt) {
   if (mode !== mem.mode) { mem.mode = mode; mem.reactT = 0; }
   mem.reactT += dt; mem.repathT += dt; mem.fireT += dt;
 
-  const input = { mx: 0, my: 0, aimX: bot.aimX, aimY: bot.aimY, fire: false, swim: false, special: false };
+  const input = { mx: 0, my: 0, aimX: bot.aimX, aimY: bot.aimY, fire: false, swim: false, special: false, jump: false };
 
   if (mode === 'RETREAT') {
     const s = SPAWNS[bot.team];
@@ -620,20 +740,31 @@ function botThink(bot, mem, state, rng, dt) {
       } else if (def.kind === 'roller') {
         input.fire = d <= def.swingRange;
       } else {
-        input.fire = true;
+        input.fire = true; // shooter/slosher/spinner/blaster は押しっぱなしでOK
       }
     }
+    // 高所の敵へはジャンプで追従（v3）
+    if (enemy.z > bot.z + 10 && bot.grounded && rng() < 0.1) input.jump = true;
     if (canSpecial(bot)) input.special = true;
   } else { // PAINT
     if (!mem.hasTarget || mem.repathT > B.REPATH_TIME || reached(bot, mem)) pickPaintTarget(bot, mem, state, rng);
     setMove(input, bot, mem.tx, mem.ty, state, mem, rng);
     input.aimX = input.mx || bot.aimX; input.aimY = input.my || bot.aimY;
     // 進行方向へ塗り射撃
-    if (def.kind === 'shooter') input.fire = bot.ink > 15;
+    if (def.kind === 'shooter' || def.kind === 'slosher' || def.kind === 'blaster') input.fire = bot.ink > 15;
+    else if (def.kind === 'spinner') input.fire = bot.ink > 25;
     else if (def.kind === 'charger') input.fire = mem.fireT % 1.0 < 0.55 && bot.ink > 25; // 部分チャージ連発
     // ローラーは移動轢き塗りのみ
     if (canSpecial(bot) && rng() < 0.02) input.special = true;
+    // 目の前が高い台ならジャンプで登る（v3）
+    if (bot.grounded && (input.mx !== 0 || input.my !== 0)) {
+      const aheadH = state.grid.levelAt(bot.x + input.mx * 24, bot.y + input.my * 24) * CONFIG.TERRAIN.PLATFORM_H;
+      if (aheadH > bot.z + CONFIG.TERRAIN.CLIMB_MARGIN) input.jump = true;
+    }
   }
+
+  // スタック時もジャンプを試す（v3）
+  if (mem.stuckT > 0.8 && bot.grounded) input.jump = true;
 
   // スタック検知（REV-R1-102）
   if (Math.hypot(bot.x - mem.stuckX, bot.y - mem.stuckY) < 4) {
@@ -742,7 +873,7 @@ function hudModel(state, playerId = 'A1') {
 
 
 
-const BOT_WEAPONS = ['shooter', 'roller', 'charger'];
+const BOT_WEAPONS = ['shooter', 'roller', 'charger', 'slosher', 'spinner', 'blaster']; // v3: 6種
 
 function createMatch({ seed = 1, playerWeapon = 'shooter', difficulty = CONFIG.BOT.DEFAULT, playerAuto = false } = {}) {
   const g = CONFIG.GRID;
@@ -774,17 +905,20 @@ function createMatch({ seed = 1, playerWeapon = 'shooter', difficulty = CONFIG.B
     grid, entities, bullets: [], botMems,
     rng: mulberry32(seed), difficulty, playerAuto,
     result: null,
+    events: [], // v3: 1tick分の効果音/エフェクト用イベント
   };
 }
 
 function tick(state, playerInput = NO_INPUT, dt = 1 / 60) {
   if (state.phase !== 'PLAY') return; // C-005: RESULT後は状態不変
+  if (state.events) state.events.length = 0; // v3: イベントは1tickで消費
 
   for (const e of state.entities) {
     const input = e.isPlayer ? playerInput : botThink(e, botMem(state, e), state, state.rng, dt);
     updateEntity(e, input, state.grid, dt);
+    if (e.justJumped) state.events?.push({ type: 'jump', x: e.x, y: e.y, team: e.team });
     if (e.state === 'ALIVE') {
-      if (input.special) trySpecial(e, state);
+      if (input.special && trySpecial(e, state)) state.events?.push({ type: 'special', x: e.x, y: e.y, team: e.team });
       updateWeapon(e, input, state, dt);
     }
   }
@@ -850,6 +984,14 @@ function createRenderer(canvas) {
   }
 
   function drawObstacles() {
+    // v3の台（2D版では明色の床として表示。塗りは上書きされる）
+    for (const [x, y, w, h] of platformRects()) {
+      offCtx.fillStyle = '#3f3f52';
+      offCtx.fillRect(x, y, w, h);
+      offCtx.strokeStyle = '#54546c';
+      offCtx.lineWidth = 2;
+      offCtx.strokeRect(x + 1, y + 1, w - 2, h - 2);
+    }
     for (const [x, y, w, h] of obstacleRects()) {
       offCtx.fillStyle = COLORS.obstacle;
       offCtx.fillRect(x, y, w, h);

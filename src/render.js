@@ -1,7 +1,7 @@
 // 描画層: グリッド差分→オフスクリーン→メイン（ADR-003 / EV-TECH-002/003）
 import { CONFIG } from './core/config.js';
 import { OBSTACLE } from './core/grid.js';
-import { obstacleRects } from './core/stage.js';
+import { obstacleRects, platformRects } from './core/stage.js';
 
 const COLORS = {
   floor: '#23232c',
@@ -30,6 +30,14 @@ export function createRenderer(canvas) {
   }
 
   function drawObstacles() {
+    // v3の台（2D版では明色の床として表示。塗りは上書きされる）
+    for (const [x, y, w, h] of platformRects()) {
+      offCtx.fillStyle = '#3f3f52';
+      offCtx.fillRect(x, y, w, h);
+      offCtx.strokeStyle = '#54546c';
+      offCtx.lineWidth = 2;
+      offCtx.strokeRect(x + 1, y + 1, w - 2, h - 2);
+    }
     for (const [x, y, w, h] of obstacleRects()) {
       offCtx.fillStyle = COLORS.obstacle;
       offCtx.fillRect(x, y, w, h);

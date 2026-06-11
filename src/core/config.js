@@ -3,6 +3,12 @@ export const CONFIG = {
   WORLD: { W: 1280, H: 720 },
   GRID: { CELL: 8, COLS: 160, ROWS: 90 },
   MATCH: { DURATION: 180, TEAM_A: 1, TEAM_B: 2, TEAM_SIZE: 4 },
+  TERRAIN: { // v3: 高低差（FR-JMP/FR-LVL）
+    PLATFORM_H: 26,      // 台1段の高さ
+    WALL_H: 44,          // 壁(OBSTACLE)の高さ＝弾はこれ未満なら遮られる
+    CLIMB_MARGIN: 6,     // この高さ差まで登り許容
+  },
+  JUMP: { V0: 210, GRAVITY: 600 }, // 初速210/重力600 → 頂点約36>台26で登れる
   PLAYER: {
     HP: 100, INK: 100, SPEED: 150, RADIUS: 13,
     SWIM_MULT: 1.8,            // FR-INK-002
@@ -37,6 +43,22 @@ export const CONFIG = {
       maxRange: 520, rangeBase: 0.35, // 射程=maxRange*(0.35+0.65c)
       inkCostFull: 18, chargeSpeedMult: 0.5,
       bulletSpeed: 1400, paintR: 12, dropletEvery: 40,
+    },
+    slosher: { // v3 FR-WPN-004: 山なりに投げて壁を越える大塗り
+      kind: 'slosher', name: 'バケットスロッシャー',
+      interval: 0.55, dmg: 70, range: 300, inkCost: 7,
+      bulletSpeed: 340, lobV0: 150, paintR: 30, dropletEvery: 70,
+    },
+    spinner: { // v3 FR-WPN-005: スピンアップ後に高速連射
+      kind: 'spinner', name: 'ガトリングスピナー',
+      spinupTime: 0.8, interval: 0.06, dmg: 30, range: 310,
+      inkCost: 0.7, bulletSpeed: 650, paintR: 14, dropletEvery: 52,
+      spinSpeedMult: 0.6,
+    },
+    blaster: { // v3 FR-WPN-006: 着弾爆発・範囲ダメージ
+      kind: 'blaster', name: 'バーストブラスター',
+      interval: 0.7, dmg: 100, splashDmg: 50, splashR: 55,
+      range: 230, inkCost: 10, bulletSpeed: 480, paintR: 26, dropletEvery: 90,
     },
   },
   BOT: { // FR-BOT-001/002 (REV-R1-006/102)

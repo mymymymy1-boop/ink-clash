@@ -16,7 +16,7 @@ const CORE = [
 ];
 const BUILDS = [
   { dev: 'dev.html', out: 'classic.html', entry: 'game.js', mods: [...CORE, 'src/render.js', 'src/game.js'], vendor: null },
-  { dev: 'dev3d.html', out: 'index.html', entry: 'game3d.js', mods: [...CORE, 'src/paintcanvas.js', 'src/render3d.js', 'src/touch.js', 'src/game3d.js'], vendor: 'vendor/three.min.js' },
+  { dev: 'dev3d.html', out: 'index.html', entry: 'game3d.js', mods: [...CORE, 'src/paintcanvas.js', 'src/sound.js', 'src/render3d.js', 'src/touch.js', 'src/game3d.js'], vendor: 'vendor/three.min.js' },
 ];
 
 function strip(code) {

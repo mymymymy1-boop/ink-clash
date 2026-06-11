@@ -3,11 +3,11 @@
 const STICK_MAX = 52;
 
 export function createControls(area, els) {
-  // els: { stick, stickKnob, btnFire, btnSwim, btnSp }
+  // els: { stick, stickKnob, btnFire, btnSwim, btnSp, btnJump }
   const state = {
     stickId: null, sx: 0, sy: 0, ox: 0, oy: 0,
     camId: null, lastX: 0, yawDelta: 0,
-    fire: false, swim: false, special: false,
+    fire: false, swim: false, special: false, jump: false,
     keys: new Set(), mouseDrag: false,
   };
 
@@ -59,10 +59,11 @@ export function createControls(area, els) {
   bindButton(els.btnFire, (v) => { state.fire = v; });
   bindButton(els.btnSwim, (v) => { state.swim = v; });
   bindButton(els.btnSp, (v) => { state.special = v; });
+  bindButton(els.btnJump, (v) => { state.jump = v; }); // v3
 
-  // --- PCフォールバック（FR-TOUCH-003） ---
+  // --- PCフォールバック（FR-TOUCH-003）: Space=ジャンプ / K=潜行 / J=射撃 / E=SP ---
   addEventListener('keydown', (ev) => {
-    if (['KeyW', 'KeyA', 'KeyS', 'KeyD', 'Space', 'KeyE', 'KeyJ'].includes(ev.code)) ev.preventDefault();
+    if (['KeyW', 'KeyA', 'KeyS', 'KeyD', 'Space', 'KeyE', 'KeyJ', 'KeyK'].includes(ev.code)) ev.preventDefault();
     state.keys.add(ev.code);
   });
   addEventListener('keyup', (ev) => state.keys.delete(ev.code));
@@ -89,8 +90,9 @@ export function createControls(area, els) {
       my: fy * -sy + ry * sx,
       aimX: fx, aimY: fy,
       fire: state.fire || state.keys.has('KeyJ'),
-      swim: state.swim || state.keys.has('Space'),
+      swim: state.swim || state.keys.has('KeyK'),
       special: state.special || state.keys.has('KeyE'),
+      jump: state.jump || state.keys.has('Space'), // v3
     };
   }
 

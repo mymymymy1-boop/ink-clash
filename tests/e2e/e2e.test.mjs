@@ -62,11 +62,11 @@ test('E2E-N2: 終了時点判定 — 後半の塗り返しで逆転', () => {
 test('E2E-N3: 塗り→SP150→発動でインク全回復＋帯塗り', () => {
   const m = createMatch({ seed: 3 });
   const p = isolatePlayer(m);
-  // 右へ移動しながら射撃してSPを溜める
+  // 右へ移動しながら射撃してSPを溜める（v3: 台に当たったらジャンプで乗り越える）
   let fired = 0;
   for (let i = 0; i < 60 * 60 && p.sp < CONFIG.SP.MAX; i++) {
-    const inp = input({ mx: 1, my: 0, aimX: 1, aimY: 0.2, fire: p.ink > 5 });
-    if (p.ink <= 5) inp.swim = true; // 自インクで回復
+    const inp = input({ mx: 1, my: 0, aimX: 1, aimY: 0.2, fire: p.ink > 5, jump: i % 40 === 0 });
+    if (p.ink <= 5) { inp.swim = true; inp.fire = false; }
     tick(m, inp, DT);
     fired++;
   }

@@ -26,14 +26,20 @@
     color: #fff; font-weight: 800; display: flex; align-items: center; justify-content: center;
     user-select: none; -webkit-user-select: none; z-index: 5; }
   .btn.pressed { background: #ffffff45; }
-  #btn-fire { right: max(20px, env(safe-area-inset-right)); bottom: 76px; width: 96px; height: 96px;
+  #btn-fire { right: max(20px, env(safe-area-inset-right)); bottom: 86px; width: 96px; height: 96px;
     font-size: 17px; background: #ff6b1a3d; border-color: var(--a); }
   #btn-fire.pressed { background: #ff6b1a88; }
-  #btn-swim { right: 132px; bottom: 30px; width: 68px; height: 68px; font-size: 12px;
+  #btn-jump { right: 128px; bottom: 36px; width: 76px; height: 76px; font-size: 13px;
+    background: #ffffff22; border-color: #fff; }
+  #btn-jump.pressed { background: #ffffff55; }
+  #btn-swim { right: 224px; bottom: 110px; width: 62px; height: 62px; font-size: 11px;
     background: #00b8a92e; border-color: var(--b); }
   #btn-swim.pressed { background: #00b8a980; }
-  #btn-sp { right: 36px; bottom: 196px; width: 64px; height: 64px; font-size: 11px;
+  #btn-sp { right: 36px; bottom: 206px; width: 64px; height: 64px; font-size: 11px;
     background: conic-gradient(#ffd23e calc(var(--p, 0) * 1%), #ffffff18 0); border-color: #ffd23e; }
+  #btn-mute { position: fixed; top: max(8px, env(safe-area-inset-top)); right: max(10px, env(safe-area-inset-right));
+    width: 40px; height: 40px; border-radius: 50%; border: 1px solid #ffffff44; background: #ffffff14;
+    color: #fff; font-size: 17px; z-index: 11; }
   #btn-sp.ready { box-shadow: 0 0 18px #ffd23e; animation: pulse 1s infinite; }
   @keyframes pulse { 50% { transform: scale(1.08); } }
   #sp-ring { position: absolute; inset: 4px; border-radius: 50%; background: #10101adb;
@@ -99,8 +105,10 @@
   </div>
 </div>
 <button id="btn-fire" class="btn">ショット</button>
+<button id="btn-jump" class="btn">ジャンプ</button>
 <button id="btn-swim" class="btn">潜行</button>
 <button id="btn-sp" class="btn"><span id="sp-ring">SP</span></button>
+<button id="btn-mute">🔊</button>
 <div id="respawn">復活まで <span id="respawn-n">3</span> 秒</div>
 
 <div id="title" class="screen on">
@@ -110,12 +118,15 @@
     <button data-weapon="shooter"><span class="wname"></span><span class="wdesc">連射が利く万能タイプ</span></button>
     <button data-weapon="roller"><span class="wname"></span><span class="wdesc">走るだけで道を塗る・一撃必倒</span></button>
     <button data-weapon="charger"><span class="wname"></span><span class="wdesc">長押しチャージ・最長射程</span></button>
+    <button data-weapon="slosher"><span class="wname"></span><span class="wdesc">山なり投擲・壁の向こうも塗れる</span></button>
+    <button data-weapon="spinner"><span class="wname"></span><span class="wdesc">スピンアップ後に超連射</span></button>
+    <button data-weapon="blaster"><span class="wname"></span><span class="wdesc">着弾爆発・範囲ダメージ</span></button>
   </div>
   <button id="start" class="big">バトル開始</button>
   <div id="controls-hint">
-    左半分: スティックで移動 ／ 右半分: スワイプで視点旋回<br>
+    左半分: スティックで移動 ／ 右半分: スワイプで視点旋回 ／ ジャンプで段差や台に登れる<br>
     ショット長押しで連射 ／ 潜行＝自インクで高速移動＆回復 ／ SP＝スペシャル<br>
-    （PC: WASD移動・ドラッグ旋回・J or ショットボタンで射撃・Space潜行・E）
+    （PC: WASD移動・ドラッグ旋回・J射撃・Spaceジャンプ・K潜行・E）
   </div>
 </div>
 

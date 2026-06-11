@@ -7,6 +7,7 @@ export class PaintGrid {
   constructor(cols, rows, cell) {
     this.cols = cols; this.rows = rows; this.cell = cell;
     this.cells = new Uint8Array(cols * rows);
+    this.levels = new Uint8Array(cols * rows); // v3: 高さレベル(0=地面,1=台)
     this.counts = { 1: 0, 2: 0 };
     this.obstacleCount = 0;
     this.dirty = []; // 差分セルindex（renderer向け）
@@ -23,6 +24,21 @@ export class PaintGrid {
   }
 
   isObstacleAt(px, py) { return this.valueAt(px, py) === OBSTACLE; }
+
+  // v3: セルの高さレベル（範囲外=0）
+  levelAt(px, py) {
+    const cx = Math.floor(px / this.cell), cy = Math.floor(py / this.cell);
+    if (!this.inBounds(cx, cy)) return 0;
+    return this.levels[this.idx(cx, cy)];
+  }
+
+  setPlatformRect(px, py, w, h, level = 1) { // 台（塗れる・登れる高所）
+    const c0 = Math.floor(px / this.cell), r0 = Math.floor(py / this.cell);
+    const c1 = Math.ceil((px + w) / this.cell), r1 = Math.ceil((py + h) / this.cell);
+    for (let cy = r0; cy < r1; cy++) for (let cx = c0; cx < c1; cx++) {
+      if (this.inBounds(cx, cy)) this.levels[this.idx(cx, cy)] = level;
+    }
+  }
 
   setObstacleRect(px, py, w, h) { // ステージ構築用（ピクセル矩形）
     const c0 = Math.floor(px / this.cell), r0 = Math.floor(py / this.cell);

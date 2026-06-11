@@ -28,7 +28,7 @@ export function botThink(bot, mem, state, rng, dt) {
   if (mode !== mem.mode) { mem.mode = mode; mem.reactT = 0; }
   mem.reactT += dt; mem.repathT += dt; mem.fireT += dt;
 
-  const input = { mx: 0, my: 0, aimX: bot.aimX, aimY: bot.aimY, fire: false, swim: false, special: false };
+  const input = { mx: 0, my: 0, aimX: bot.aimX, aimY: bot.aimY, fire: false, swim: false, special: false, jump: false };
 
   if (mode === 'RETREAT') {
     const s = SPAWNS[bot.team];
@@ -50,20 +50,31 @@ export function botThink(bot, mem, state, rng, dt) {
       } else if (def.kind === 'roller') {
         input.fire = d <= def.swingRange;
       } else {
-        input.fire = true;
+        input.fire = true; // shooter/slosher/spinner/blaster は押しっぱなしでOK
       }
     }
+    // 高所の敵へはジャンプで追従（v3）
+    if (enemy.z > bot.z + 10 && bot.grounded && rng() < 0.1) input.jump = true;
     if (canSpecial(bot)) input.special = true;
   } else { // PAINT
     if (!mem.hasTarget || mem.repathT > B.REPATH_TIME || reached(bot, mem)) pickPaintTarget(bot, mem, state, rng);
     setMove(input, bot, mem.tx, mem.ty, state, mem, rng);
     input.aimX = input.mx || bot.aimX; input.aimY = input.my || bot.aimY;
     // 進行方向へ塗り射撃
-    if (def.kind === 'shooter') input.fire = bot.ink > 15;
+    if (def.kind === 'shooter' || def.kind === 'slosher' || def.kind === 'blaster') input.fire = bot.ink > 15;
+    else if (def.kind === 'spinner') input.fire = bot.ink > 25;
     else if (def.kind === 'charger') input.fire = mem.fireT % 1.0 < 0.55 && bot.ink > 25; // 部分チャージ連発
     // ローラーは移動轢き塗りのみ
     if (canSpecial(bot) && rng() < 0.02) input.special = true;
+    // 目の前が高い台ならジャンプで登る（v3）
+    if (bot.grounded && (input.mx !== 0 || input.my !== 0)) {
+      const aheadH = state.grid.levelAt(bot.x + input.mx * 24, bot.y + input.my * 24) * CONFIG.TERRAIN.PLATFORM_H;
+      if (aheadH > bot.z + CONFIG.TERRAIN.CLIMB_MARGIN) input.jump = true;
+    }
   }
+
+  // スタック時もジャンプを試す（v3）
+  if (mem.stuckT > 0.8 && bot.grounded) input.jump = true;
 
   // スタック検知（REV-R1-102）
   if (Math.hypot(bot.x - mem.stuckX, bot.y - mem.stuckY) < 4) {

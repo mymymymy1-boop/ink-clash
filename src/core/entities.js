@@ -12,10 +12,11 @@ export function createEntity({ id, team, x, y, weaponKind, isPlayer = false }) {
     swimming: false, aimX: 1, aimY: 0,
     cooldown: 0, charge: 0, charging: false,
     moving: false,
+    z: 0, vz: 0, grounded: true, spin: 0, // v3: 高さ・ジャンプ・スピナー回転
   };
 }
 
-export const NO_INPUT = Object.freeze({ mx: 0, my: 0, aimX: 1, aimY: 0, fire: false, swim: false, special: false });
+export const NO_INPUT = Object.freeze({ mx: 0, my: 0, aimX: 1, aimY: 0, fire: false, swim: false, special: false, jump: false });
 
 function clamp(v, lo, hi) { return v < lo ? lo : v > hi ? hi : v; }
 
@@ -36,14 +37,15 @@ export function updateEntity(e, input, grid, dt) {
       e.state = 'ALIVE'; e.x = e.spawnX; e.y = e.spawnY;
       e.hp = P.HP; e.ink = P.INK; e.invulnT = P.INVULN_TIME;
       e.charge = 0; e.charging = false; e.swimming = false;
+      e.z = grid.levelAt(e.x, e.y) * CONFIG.TERRAIN.PLATFORM_H; e.vz = 0; e.grounded = true;
     }
     return;
   }
   if (e.invulnT > 0) e.invulnT = Math.max(0, e.invulnT - dt);
 
   const terrain = terrainFor(e, grid);
-  const onOwn = terrain === 'own';
-  const onEnemy = terrain === 'enemy';
+  const onOwn = terrain === 'own' && e.grounded;
+  const onEnemy = terrain === 'enemy' && e.grounded; // 空中は地形効果なし（v3）
 
   // スイム形態（効果は自インク上のみ）。C-007: スイム中は射撃不可（weapons.jsで参照）
   e.swimming = !!input.swim;
@@ -67,6 +69,7 @@ export function updateEntity(e, input, grid, dt) {
   if (e.swimming && onOwn) mult = P.SWIM_MULT;
   else if (onEnemy) mult = P.ENEMY_INK_MULT;
   if (e.charging) mult *= CONFIG.WEAPONS.charger.chargeSpeedMult;
+  if (e.spin > 0 && e.weaponKind === 'spinner') mult *= CONFIG.WEAPONS.spinner.spinSpeedMult;
 
   let mx = input.mx, my = input.my;
   const ml = Math.hypot(mx, my);
@@ -76,6 +79,19 @@ export function updateEntity(e, input, grid, dt) {
     const sp = P.SPEED * mult * dt;
     moveWithCollision(e, mx * sp, my * sp, grid);
   }
+
+  // ジャンプ＆重力（v3 FR-JMP-001）
+  if (input.jump && e.grounded && !e.swimming) {
+    e.vz = CONFIG.JUMP.V0; e.grounded = false; e.justJumped = true;
+  } else { e.justJumped = false; }
+  const groundH = grid.levelAt(e.x, e.y) * CONFIG.TERRAIN.PLATFORM_H;
+  if (!e.grounded || e.z !== groundH) {
+    e.vz -= CONFIG.JUMP.GRAVITY * dt;
+    e.z += e.vz * dt;
+    e.grounded = false;
+    if (e.z <= groundH && e.vz <= 0) { e.z = groundH; e.vz = 0; e.grounded = true; }
+  }
+  if (e.grounded && e.z < groundH) e.z = groundH; // 段差登り補助（CLIMB_MARGIN内）
 }
 
 // 軸別衝突（C-004: 境界はgrid側でobstacle扱い）
@@ -83,20 +99,20 @@ function moveWithCollision(e, dx, dy, grid) {
   const r = P.RADIUS;
   const W = CONFIG.WORLD.W, H = CONFIG.WORLD.H;
   const nx = clamp(e.x + dx, r, W - r);
-  if (!blocked(nx, e.y, r, grid, Math.sign(dx), 0)) e.x = nx;
+  if (!blocked(nx, e.y, r, grid, Math.sign(dx), 0, e.z)) e.x = nx;
   const ny = clamp(e.y + dy, r, H - r);
-  if (!blocked(e.x, ny, r, grid, 0, Math.sign(dy))) e.y = ny;
+  if (!blocked(e.x, ny, r, grid, 0, Math.sign(dy), e.z)) e.y = ny;
 }
 
-function blocked(x, y, r, grid, sx, sy) {
-  // 進行方向の縁3点をチェック
-  if (sx !== 0) {
-    const ex = x + sx * r;
-    return grid.isObstacleAt(ex, y) || grid.isObstacleAt(ex, y - r * 0.7) || grid.isObstacleAt(ex, y + r * 0.7);
-  }
-  if (sy !== 0) {
-    const ey = y + sy * r;
-    return grid.isObstacleAt(x, ey) || grid.isObstacleAt(x - r * 0.7, ey) || grid.isObstacleAt(x + r * 0.7, ey);
+function blocked(x, y, r, grid, sx, sy, z) {
+  // 進行方向の縁3点をチェック（壁 or 自分の高さより高い台の側面 = v3）
+  const pts = sx !== 0
+    ? [[x + sx * r, y], [x + sx * r, y - r * 0.7], [x + sx * r, y + r * 0.7]]
+    : [[x, y + sy * r], [x - r * 0.7, y + sy * r], [x + r * 0.7, y + sy * r]];
+  for (const [px, py] of pts) {
+    if (grid.isObstacleAt(px, py)) return true;
+    const h = grid.levelAt(px, py) * CONFIG.TERRAIN.PLATFORM_H;
+    if (h > z + CONFIG.TERRAIN.CLIMB_MARGIN) return true; // 高い台の側面
   }
   return false;
 }
