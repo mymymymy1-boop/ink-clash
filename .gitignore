@@ -1,0 +1,8 @@
+﻿node_modules/
+*.log
+.env
+harness/state/
+harness/shot*.png
+_install_tmp/
+
+.claude/

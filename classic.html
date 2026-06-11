@@ -1,0 +1,1082 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<title>INK CLASH</title>
+<style>
+  :root { --a: #FF6B1A; --b: #00B8A9; --bg: #14141a; }
+  * { box-sizing: border-box; margin: 0; }
+  body { background: var(--bg); color: #eee; font-family: 'Segoe UI', 'Hiragino Sans', sans-serif;
+         display: flex; align-items: center; justify-content: center; min-height: 100vh; }
+  #wrap { position: relative; width: min(96vw, 1280px); }
+  canvas { width: 100%; display: block; border-radius: 10px; background: #23232c; cursor: crosshair; }
+
+  /* HUD */
+  #hud-top { position: absolute; top: 10px; left: 50%; transform: translateX(-50%);
+             display: flex; flex-direction: column; align-items: center; gap: 4px; pointer-events: none; width: 50%; }
+  #time { font-size: 30px; font-weight: 800; text-shadow: 0 2px 6px #000a; }
+  #ratio { width: 100%; height: 14px; border-radius: 7px; overflow: hidden; display: flex; background: #ffffff22; }
+  #ratio-a { background: var(--a); height: 100%; transition: width .3s; }
+  #ratio-b { background: var(--b); height: 100%; flex: 1; transition: width .3s; }
+  #ratio-pcts { width: 100%; display: flex; justify-content: space-between; font-size: 13px; font-weight: 700; }
+  #ratio-a-pct { color: var(--a); } #ratio-b-pct { color: var(--b); }
+
+  #hud-bl { position: absolute; left: 14px; bottom: 14px; width: 220px; pointer-events: none; }
+  #hud-br { position: absolute; right: 14px; bottom: 14px; width: 180px; pointer-events: none; }
+  .bar-label { font-size: 11px; opacity: .85; margin-bottom: 2px; letter-spacing: .08em; }
+  .bar { height: 12px; background: #ffffff22; border-radius: 6px; overflow: hidden; margin-bottom: 8px; }
+  .bar > div { height: 100%; transition: width .12s; }
+  #ink-bar { background: var(--a); width: 100%; }
+  #hp-bar { background: #6fe06f; width: 100%; }
+  #sp-bar { background: #ffd23e; width: 0%; }
+  #sp-wrap.ready .bar { box-shadow: 0 0 12px #ffd23e; }
+  #sp-wrap.ready .bar-label::after { content: '  [E] 発動！'; color: #ffd23e; }
+
+  #respawn { position: absolute; inset: 0; display: none; align-items: center; justify-content: center;
+             background: #000a; border-radius: 10px; font-size: 26px; font-weight: 800; }
+  #respawn.on { display: flex; }
+
+  /* 画面オーバーレイ */
+  .screen { position: absolute; inset: 0; display: none; flex-direction: column; align-items: center;
+            justify-content: center; gap: 18px; background: #101018ee; border-radius: 10px; }
+  .screen.on { display: flex; }
+  #title-name { font-size: 64px; font-weight: 900; letter-spacing: .04em;
+    background: linear-gradient(90deg, var(--a), var(--b)); -webkit-background-clip: text; background-clip: text; color: transparent; }
+  .sub { opacity: .8; font-size: 14px; }
+  #weapons { display: flex; gap: 12px; }
+  [data-weapon] { background: #23232c; color: #eee; border: 2px solid #444; border-radius: 10px;
+    padding: 14px 18px; cursor: pointer; font-size: 14px; width: 170px; }
+  [data-weapon]:hover { border-color: #888; }
+  [data-weapon].sel { border-color: var(--a); box-shadow: 0 0 10px #ff6b1a55; }
+  .wname { font-weight: 800; font-size: 16px; display: block; margin-bottom: 4px; }
+  .wdesc { font-size: 11px; opacity: .75; }
+  button.big { background: linear-gradient(90deg, var(--a), #ff9c1a); border: none; color: #fff;
+    font-size: 20px; font-weight: 800; padding: 12px 48px; border-radius: 999px; cursor: pointer; }
+  button.big:hover { filter: brightness(1.1); }
+  #controls { font-size: 12px; opacity: .7; line-height: 1.8; text-align: center; }
+  #result-title { font-size: 56px; font-weight: 900; }
+  #result-bar { width: 60%; height: 22px; border-radius: 11px; overflow: hidden; display: flex; background: var(--b); }
+  #result-bar-a { background: var(--a); height: 100%; }
+  #result-pcts { width: 60%; display: flex; justify-content: space-between; font-weight: 700; }
+  #result-a { color: var(--a); } #result-b { color: var(--b); }
+</style>
+</head>
+<body>
+<div id="wrap">
+  <canvas id="game" width="1280" height="720"></canvas>
+
+  <div id="hud-top">
+    <div id="time">3:00</div>
+    <div id="ratio"><div id="ratio-a"></div><div id="ratio-b"></div></div>
+    <div id="ratio-pcts"><span id="ratio-a-pct">0%</span><span id="ratio-b-pct">0%</span></div>
+  </div>
+  <div id="hud-bl">
+    <div class="bar-label">インク</div><div class="bar"><div id="ink-bar"></div></div>
+    <div class="bar-label">HP</div><div class="bar"><div id="hp-bar"></div></div>
+  </div>
+  <div id="hud-br"><div id="sp-wrap">
+    <div class="bar-label">スペシャル</div><div class="bar"><div id="sp-bar"></div></div>
+  </div></div>
+  <div id="respawn">復活まで <span id="respawn-n">3</span> 秒</div>
+
+  <div id="title" class="screen on">
+    <div id="title-name">INK CLASH</div>
+    <div class="sub">インクを塗り合う4v4対戦！ 3分間でより広く塗ったチームの勝ち</div>
+    <div id="weapons">
+      <button data-weapon="shooter"><span class="wname"></span><span class="wdesc">連射が利く万能タイプ。迷ったらこれ</span></button>
+      <button data-weapon="roller"><span class="wname"></span><span class="wdesc">走るだけで道を塗る。近づいて一撃必倒</span></button>
+      <button data-weapon="charger"><span class="wname"></span><span class="wdesc">長押しでチャージ。最長射程の一閃</span></button>
+    </div>
+    <button id="start" class="big">バトル開始</button>
+    <div id="controls">
+      移動: W A S D ／ エイム: マウス ／ 射撃: 左クリック<br>
+      潜行(自インクで高速移動＆回復): Space ／ スペシャル: E
+    </div>
+  </div>
+
+  <div id="result" class="screen">
+    <div id="result-title"></div>
+    <div id="result-bar"><div id="result-bar-a"></div></div>
+    <div id="result-pcts"><span id="result-a"></span><span id="result-b"></span></div>
+    <button id="rematch" class="big">もう一回</button>
+  </div>
+</div>
+<script type="module">
+// ===== src/core/rng.js =====
+// ADR-004: シード可能乱数（mulberry32）。組み込み乱数の直呼び禁止（P-003）。
+function mulberry32(seed) {
+  let a = seed >>> 0;
+  return function () {
+    a |= 0; a = (a + 0x6D2B79F5) | 0;
+    let t = Math.imul(a ^ (a >>> 15), 1 | a);
+    t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
+    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+  };
+}
+
+// ===== src/core/config.js =====
+// バランス定数の単一の正（CLAUDE.md / SRS D-002・D-005 と一致させる）
+const CONFIG = {
+  WORLD: { W: 1280, H: 720 },
+  GRID: { CELL: 8, COLS: 160, ROWS: 90 },
+  MATCH: { DURATION: 180, TEAM_A: 1, TEAM_B: 2, TEAM_SIZE: 4 },
+  PLAYER: {
+    HP: 100, INK: 100, SPEED: 150, RADIUS: 13,
+    SWIM_MULT: 1.8,            // FR-INK-002
+    ENEMY_INK_MULT: 0.4,       // FR-INK-003
+    ENEMY_INK_DPS: 10,         // FR-INK-003
+    ENEMY_INK_HP_FLOOR: 30,    // C-003
+    SWIM_RECOVER: 12,          // %/s FR-INK-002
+    NATURAL_RECOVER: 3,        // %/s（非射撃時）
+    RESPAWN_TIME: 3,           // FR-DMG-001
+    INVULN_TIME: 1.5,          // FR-DMG-001 (REV-R1-009)
+  },
+  SP: {
+    MAX: 150,                  // FR-SP-001 (C-006: >=150で発動)
+    PER_CELL: 0.5,             // 新規塗りセル1つ=0.5pt
+    STORM_W: 48, STORM_LEN: 320, STORM_DMG: 40, // REV-R1-105
+  },
+  WEAPONS: {
+    shooter: { // FR-WPN-001
+      kind: 'shooter', name: 'ラピッドシューター',
+      interval: 0.1, dmg: 36, range: 260, inkCost: 1.0,
+      bulletSpeed: 600, paintR: 18, dropletEvery: 48,
+    },
+    roller: { // FR-WPN-002
+      kind: 'roller', name: 'ペイントローラー',
+      swingInterval: 0.6, swingDmg: 100, swingRange: 90,
+      inkCostSwing: 8, trailW: 24, inkCostTrail: 1.2, // %/s 轢き塗り中
+      swingPaintR: 44,
+    },
+    charger: { // FR-WPN-003 (REV-R1-005)
+      kind: 'charger', name: 'レーザーチャージャー',
+      chargeTime: 1.2, fullDmg: 100, partialDmg: 40,
+      maxRange: 520, rangeBase: 0.35, // 射程=maxRange*(0.35+0.65c)
+      inkCostFull: 18, chargeSpeedMult: 0.5,
+      bulletSpeed: 1400, paintR: 12, dropletEvery: 40,
+    },
+  },
+  BOT: { // FR-BOT-001/002 (REV-R1-006/102)
+    DIFFICULTIES: {
+      EASY: { aimErr: 0.35, reactDelay: 0.8 },
+      NORMAL: { aimErr: 0.18, reactDelay: 0.4 },
+      HARD: { aimErr: 0.06, reactDelay: 0.15 },
+    },
+    DEFAULT: 'NORMAL',
+    DETECT_MULT: 1.2, STUCK_TIME: 2, RAY_AHEAD: 40, REPATH_TIME: 4,
+  },
+  BRANDING: { // LAW-001 / W-001: 全てオリジナル
+    TITLE: 'INK CLASH',
+    TEAM_COLORS: { 1: '#FF6B1A', 2: '#00B8A9' },
+    TEAM_NAMES: { 1: 'オレンジ', 2: 'ティール' },
+    CHAR_NAME: 'ペイントボット',
+  },
+};
+
+// ===== src/core/grid.js =====
+// PaintGrid — 塗り状態の単一の正（ADR-003 / DATA-001）
+// 値: 0=未塗 1=チームA 2=チームB 255=障害物
+const EMPTY = 0;
+const OBSTACLE = 255;
+
+class PaintGrid {
+  constructor(cols, rows, cell) {
+    this.cols = cols; this.rows = rows; this.cell = cell;
+    this.cells = new Uint8Array(cols * rows);
+    this.counts = { 1: 0, 2: 0 };
+    this.obstacleCount = 0;
+    this.dirty = []; // 差分セルindex（renderer向け）
+  }
+
+  idx(cx, cy) { return cy * this.cols + cx; }
+  inBounds(cx, cy) { return cx >= 0 && cx < this.cols && cy >= 0 && cy < this.rows; }
+
+  // ピクセル座標→セル値。範囲外はOBSTACLE扱い（C-004: 範囲外アクセス防止）
+  valueAt(px, py) {
+    const cx = Math.floor(px / this.cell), cy = Math.floor(py / this.cell);
+    if (!this.inBounds(cx, cy)) return OBSTACLE;
+    return this.cells[this.idx(cx, cy)];
+  }
+
+  isObstacleAt(px, py) { return this.valueAt(px, py) === OBSTACLE; }
+
+  setObstacleRect(px, py, w, h) { // ステージ構築用（ピクセル矩形）
+    const c0 = Math.floor(px / this.cell), r0 = Math.floor(py / this.cell);
+    const c1 = Math.ceil((px + w) / this.cell), r1 = Math.ceil((py + h) / this.cell);
+    for (let cy = r0; cy < r1; cy++) for (let cx = c0; cx < c1; cx++) {
+      if (!this.inBounds(cx, cy)) continue;
+      const i = this.idx(cx, cy);
+      if (this.cells[i] !== OBSTACLE) {
+        if (this.cells[i] === 1) this.counts[1]--;
+        if (this.cells[i] === 2) this.counts[2]--;
+        this.cells[i] = OBSTACLE; this.obstacleCount++;
+      }
+    }
+  }
+
+  // 円形塗り。新規に自チーム色になったセル数を返す（SP加算用）。
+  // 障害物は塗らない（FR-MATCH-003）。塗り返しはカウント移動（FR-MATCH-002）。
+  paintCircle(px, py, r, team) {
+    let newly = 0;
+    const c = this.cell;
+    const c0 = Math.max(0, Math.floor((px - r) / c)), c1 = Math.min(this.cols - 1, Math.floor((px + r) / c));
+    const r0 = Math.max(0, Math.floor((py - r) / c)), r1 = Math.min(this.rows - 1, Math.floor((py + r) / c));
+    const r2 = r * r;
+    for (let cy = r0; cy <= r1; cy++) {
+      for (let cx = c0; cx <= c1; cx++) {
+        const dx = cx * c + c / 2 - px, dy = cy * c + c / 2 - py;
+        if (dx * dx + dy * dy > r2) continue;
+        const i = this.idx(cx, cy);
+        const v = this.cells[i];
+        if (v === OBSTACLE || v === team) continue;
+        if (v === 1 || v === 2) this.counts[v]--;
+        this.cells[i] = team; this.counts[team]++;
+        this.dirty.push(i);
+        newly++;
+      }
+    }
+    return newly;
+  }
+
+  paintableTotal() { return this.cols * this.rows - this.obstacleCount; }
+
+  ratios() { // 塗り率（母数=塗り可能セル FR-MATCH-003）
+    const t = this.paintableTotal();
+    return { 1: this.counts[1] / t, 2: this.counts[2] / t };
+  }
+
+  // C-001検証用: counts整合
+  recount() {
+    const n = { 1: 0, 2: 0, obstacle: 0, empty: 0 };
+    for (const v of this.cells) {
+      if (v === 1) n[1]++; else if (v === 2) n[2]++;
+      else if (v === OBSTACLE) n.obstacle++; else n.empty++;
+    }
+    return n;
+  }
+
+  consumeDirty() { const d = this.dirty; this.dirty = []; return d; }
+}
+
+// ===== src/core/stage.js =====
+// ステージ定義: 左右対称マップ（SDD stage.js）
+
+
+const SPAWNS = {
+  1: { x: 70, y: 360 },
+  2: { x: CONFIG.WORLD.W - 70, y: 360 },
+};
+
+// 障害物矩形（px）。中央ブロック+対称4ブロック
+const RECTS = [
+  [590, 300, 100, 120],
+  [380, 140, 96, 72], [804, 140, 96, 72],
+  [380, 508, 96, 72], [804, 508, 96, 72],
+  [240, 320, 64, 80], [976, 320, 64, 80],
+];
+
+function applyStage(grid) {
+  for (const [x, y, w, h] of RECTS) grid.setObstacleRect(x, y, w, h);
+}
+
+function obstacleRects() { return RECTS.map((r) => [...r]); }
+
+// ===== src/core/entities.js =====
+// Entity: プレイヤー/ボット共通の状態と更新（DATA-002）
+// FR-INK-001/002/003, FR-DMG-001, C-002/C-003/C-007
+
+
+const P = CONFIG.PLAYER;
+
+function createEntity({ id, team, x, y, weaponKind, isPlayer = false }) {
+  return {
+    id, team, x, y, spawnX: x, spawnY: y, isPlayer,
+    hp: P.HP, ink: P.INK, sp: 0, weaponKind,
+    state: 'ALIVE', respawnT: 0, invulnT: 0,
+    swimming: false, aimX: 1, aimY: 0,
+    cooldown: 0, charge: 0, charging: false,
+    moving: false,
+  };
+}
+
+const NO_INPUT = Object.freeze({ mx: 0, my: 0, aimX: 1, aimY: 0, fire: false, swim: false, special: false });
+
+function clamp(v, lo, hi) { return v < lo ? lo : v > hi ? hi : v; }
+
+// 地形種別: 'own' | 'enemy' | 'none' | 'obstacle'
+function terrainFor(e, grid) {
+  const v = grid.valueAt(e.x, e.y);
+  if (v === 255) return 'obstacle';
+  if (v === e.team) return 'own';
+  if (v === 1 || v === 2) return 'enemy';
+  return 'none';
+}
+
+function updateEntity(e, input, grid, dt) {
+  // FR-DMG-001 / E2E-A2: ダウン中は全入力無効
+  if (e.state === 'SPLATTED') {
+    e.respawnT -= dt;
+    if (e.respawnT <= 0) {
+      e.state = 'ALIVE'; e.x = e.spawnX; e.y = e.spawnY;
+      e.hp = P.HP; e.ink = P.INK; e.invulnT = P.INVULN_TIME;
+      e.charge = 0; e.charging = false; e.swimming = false;
+    }
+    return;
+  }
+  if (e.invulnT > 0) e.invulnT = Math.max(0, e.invulnT - dt);
+
+  const terrain = terrainFor(e, grid);
+  const onOwn = terrain === 'own';
+  const onEnemy = terrain === 'enemy';
+
+  // スイム形態（効果は自インク上のみ）。C-007: スイム中は射撃不可（weapons.jsで参照）
+  e.swimming = !!input.swim;
+
+  // エイム（単位ベクトル化）
+  const al = Math.hypot(input.aimX, input.aimY);
+  if (al > 1e-6) { e.aimX = input.aimX / al; e.aimY = input.aimY / al; }
+
+  // インク回復: スイム+自インク=12%/s、非射撃時=3%/s（FR-INK-001/002）
+  if (e.swimming && onOwn) e.ink += P.SWIM_RECOVER * dt;
+  else if (!input.fire) e.ink += P.NATURAL_RECOVER * dt;
+  e.ink = clamp(e.ink, 0, P.INK);
+
+  // 敵インクダメージ（FR-INK-003 / C-003: この要因単独ではHP30未満にしない）
+  if (onEnemy && e.invulnT <= 0 && e.hp > P.ENEMY_INK_HP_FLOOR) {
+    e.hp = Math.max(P.ENEMY_INK_HP_FLOOR, e.hp - P.ENEMY_INK_DPS * dt);
+  }
+
+  // 移動速度（FR-INK-002/003, FR-WPN-003チャージ中0.5x）
+  let mult = 1.0;
+  if (e.swimming && onOwn) mult = P.SWIM_MULT;
+  else if (onEnemy) mult = P.ENEMY_INK_MULT;
+  if (e.charging) mult *= CONFIG.WEAPONS.charger.chargeSpeedMult;
+
+  let mx = input.mx, my = input.my;
+  const ml = Math.hypot(mx, my);
+  e.moving = ml > 1e-6;
+  if (e.moving) {
+    mx /= ml; my /= ml;
+    const sp = P.SPEED * mult * dt;
+    moveWithCollision(e, mx * sp, my * sp, grid);
+  }
+}
+
+// 軸別衝突（C-004: 境界はgrid側でobstacle扱い）
+function moveWithCollision(e, dx, dy, grid) {
+  const r = P.RADIUS;
+  const W = CONFIG.WORLD.W, H = CONFIG.WORLD.H;
+  const nx = clamp(e.x + dx, r, W - r);
+  if (!blocked(nx, e.y, r, grid, Math.sign(dx), 0)) e.x = nx;
+  const ny = clamp(e.y + dy, r, H - r);
+  if (!blocked(e.x, ny, r, grid, 0, Math.sign(dy))) e.y = ny;
+}
+
+function blocked(x, y, r, grid, sx, sy) {
+  // 進行方向の縁3点をチェック
+  if (sx !== 0) {
+    const ex = x + sx * r;
+    return grid.isObstacleAt(ex, y) || grid.isObstacleAt(ex, y - r * 0.7) || grid.isObstacleAt(ex, y + r * 0.7);
+  }
+  if (sy !== 0) {
+    const ey = y + sy * r;
+    return grid.isObstacleAt(x, ey) || grid.isObstacleAt(x - r * 0.7, ey) || grid.isObstacleAt(x + r * 0.7, ey);
+  }
+  return false;
+}
+
+// 武器・スペシャルによるダメージ（敵インクダメージとは別経路: HP0まで到達可能）
+// 戻り値: ダウンさせたら true（FR-DMG-001）
+function damageEntity(e, dmg) {
+  if (e.state !== 'ALIVE' || e.invulnT > 0) return false;
+  e.hp -= dmg;
+  if (e.hp <= 0) {
+    e.hp = 0; e.state = 'SPLATTED'; e.respawnT = P.RESPAWN_TIME;
+    e.charge = 0; e.charging = false;
+    return true;
+  }
+  return false;
+}
+
+// ===== src/core/special.js =====
+// スペシャル: SPゲージ＋インクストーム（FR-SP-001, C-006）
+
+
+
+const S = CONFIG.SP;
+
+function addSP(e, newlyPaintedCells) {
+  if (e.state !== 'ALIVE') return;
+  e.sp = Math.min(S.MAX, e.sp + newlyPaintedCells * S.PER_CELL);
+}
+
+function canSpecial(e) { return e.state === 'ALIVE' && e.sp >= S.MAX; } // C-006: >=150
+
+// インクストーム: 前方帯（幅48×長さ320px）即時塗り＋帯内の敵に40dmg。発動でインク全回復・SP=0
+function trySpecial(e, state) {
+  if (!canSpecial(e)) return false;
+  const { grid, entities } = state;
+  const r = S.STORM_W / 2;
+  for (let d = 0; d <= S.STORM_LEN; d += r) {
+    // スペシャル塗りはSP再加算しない（自己増殖防止）
+    grid.paintCircle(e.x + e.aimX * d, e.y + e.aimY * d, r, e.team);
+  }
+  for (const t of entities) {
+    if (t.team === e.team || t.state !== 'ALIVE') continue;
+    if (distToSegment(t.x, t.y, e.x, e.y, e.x + e.aimX * S.STORM_LEN, e.y + e.aimY * S.STORM_LEN) <= r + CONFIG.PLAYER.RADIUS) {
+      damageEntity(t, S.STORM_DMG);
+    }
+  }
+  e.ink = CONFIG.PLAYER.INK; // EV-SP-002: 発動でインク全回復
+  e.sp = 0;
+  return true;
+}
+
+function distToSegment(px, py, x1, y1, x2, y2) {
+  const dx = x2 - x1, dy = y2 - y1;
+  const len2 = dx * dx + dy * dy;
+  const t = len2 ? Math.max(0, Math.min(1, ((px - x1) * dx + (py - y1) * dy) / len2)) : 0;
+  return Math.hypot(px - (x1 + t * dx), py - (y1 + t * dy));
+}
+
+// ===== src/core/weapons.js =====
+// 武器3種＋弾（FR-WPN-001/002/003, FR-INK-001, C-007/C-008）
+
+
+
+
+const W = CONFIG.WEAPONS;
+
+// 毎tick呼び出し。e=自エンティティ, input, state={grid,bullets,entities}
+function updateWeapon(e, input, state, dt) {
+  if (e.state !== 'ALIVE') return;
+  if (e.cooldown > 0) e.cooldown -= dt;
+  const def = W[e.weaponKind];
+
+  if (def.kind === 'shooter') updateShooter(e, def, input, state);
+  else if (def.kind === 'roller') updateRoller(e, def, input, state, dt);
+  else if (def.kind === 'charger') updateCharger(e, def, input, state, dt);
+}
+
+function canAct(e) { return !e.swimming; } // C-007: スイム中は射撃・チャージ不可
+
+function updateShooter(e, def, input, state) {
+  if (!input.fire || !canAct(e) || e.cooldown > 0) return;
+  if (e.ink < def.inkCost) return; // FR-INK-001
+  e.ink -= def.inkCost;
+  e.cooldown = def.interval;
+  spawnBullet(state, e, def.bulletSpeed, def.dmg, def.range, def.paintR, def.dropletEvery);
+}
+
+function updateRoller(e, def, input, state, dt) {
+  // 轢き塗り: 通常移動（非スイム）時のみ（FR-WPN-002 / C-007）
+  if (e.moving && !e.swimming && e.ink > 0) {
+    const newly = state.grid.paintCircle(e.x, e.y, def.trailW / 2, e.team);
+    if (newly > 0) addSP(e, newly);
+    e.ink = Math.max(0, e.ink - def.inkCostTrail * dt);
+  }
+  // 振り（近接100dmg + 前方飛沫塗り）
+  if (!input.fire || !canAct(e) || e.cooldown > 0) return;
+  if (e.ink < def.inkCostSwing) return; // FR-INK-001
+  e.ink -= def.inkCostSwing;
+  e.cooldown = def.swingInterval;
+  const sx = e.x + e.aimX * 50, sy = e.y + e.aimY * 50;
+  const newly = state.grid.paintCircle(sx, sy, def.swingPaintR, e.team);
+  if (newly > 0) addSP(e, newly);
+  for (const t of state.entities) {
+    if (t.team === e.team || t.state !== 'ALIVE') continue;
+    const dx = t.x - e.x, dy = t.y - e.y;
+    const d = Math.hypot(dx, dy);
+    if (d <= def.swingRange && (dx * e.aimX + dy * e.aimY) / (d || 1) > 0.3) {
+      damageEntity(t, def.swingDmg);
+    }
+  }
+}
+
+function updateCharger(e, def, input, state, dt) {
+  if (e.swimming) { e.charge = 0; e.charging = false; return; } // REV-R1-005: スイムでチャージ破棄
+  if (input.fire) {
+    e.charging = true;
+    e.charge = Math.min(1, e.charge + dt / def.chargeTime);
+    if (e.charge > 0.9999) e.charge = 1; // 浮動小数点蓄積誤差の吸収
+    return;
+  }
+  if (!e.charging) return;
+  // リリース→発射
+  const c = e.charge;
+  e.charging = false; e.charge = 0;
+  const cost = def.inkCostFull * Math.max(0.3, c);
+  if (e.ink < cost) return; // FR-INK-001
+  e.ink -= cost;
+  const range = def.maxRange * (def.rangeBase + (1 - def.rangeBase) * c); // FR-WPN-003
+  const dmg = c >= 1 ? def.fullDmg : def.partialDmg;
+  spawnBullet(state, e, def.bulletSpeed, dmg, range, def.paintR, def.dropletEvery);
+}
+
+function spawnBullet(state, e, speed, dmg, range, paintR, dropletEvery) {
+  state.bullets.push({
+    team: e.team, ownerId: e.id,
+    x: e.x + e.aimX * (CONFIG.PLAYER.RADIUS + 2),
+    y: e.y + e.aimY * (CONFIG.PLAYER.RADIUS + 2),
+    vx: e.aimX * speed, vy: e.aimY * speed,
+    dmg, paintR, range, traveled: 0, dropletAcc: 0, dropletEvery,
+  });
+}
+
+// 弾の前進・衝突・着弾。C-008: 障害物セル到達で消滅・塗りなし
+function updateBullets(state, dt) {
+  const { grid, bullets, entities } = state;
+  const SUB = 4; // 4px刻みで障害物・命中を検査
+  for (let i = bullets.length - 1; i >= 0; i--) {
+    const b = bullets[i];
+    let dist = Math.hypot(b.vx, b.vy) * dt;
+    const ux = b.vx / (Math.hypot(b.vx, b.vy) || 1), uy = b.vy / (Math.hypot(b.vx, b.vy) || 1);
+    let removed = false;
+    while (dist > 0 && !removed) {
+      const step = Math.min(SUB, dist);
+      b.x += ux * step; b.y += uy * step;
+      b.traveled += step; b.dropletAcc += step;
+      dist -= step;
+      if (grid.isObstacleAt(b.x, b.y)) { removed = true; break; } // C-008
+      // 飛沫塗り
+      if (b.dropletAcc >= b.dropletEvery) {
+        b.dropletAcc = 0;
+        creditPaint(state, b, grid.paintCircle(b.x, b.y, b.paintR * 0.55, b.team));
+      }
+      // 命中判定
+      for (const t of entities) {
+        if (t.team === b.team || t.state !== 'ALIVE') continue;
+        if (Math.hypot(t.x - b.x, t.y - b.y) <= CONFIG.PLAYER.RADIUS + 3) {
+          damageEntity(t, b.dmg);
+          creditPaint(state, b, grid.paintCircle(b.x, b.y, b.paintR * 0.8, b.team));
+          removed = true; break;
+        }
+      }
+      if (!removed && b.traveled >= b.range) { // 着弾塗り
+        creditPaint(state, b, grid.paintCircle(b.x, b.y, b.paintR, b.team));
+        removed = true;
+      }
+    }
+    if (removed) bullets.splice(i, 1);
+  }
+}
+
+function creditPaint(state, b, newly) {
+  if (newly <= 0) return;
+  const owner = state.entities.find((x) => x.id === b.ownerId);
+  if (owner) addSP(owner, newly);
+}
+
+// ===== src/core/bots.js =====
+// CPUボットAI: PAINT/FIGHT/RETREAT 3状態（FR-BOT-001/002, REV-R1-006/102）
+
+
+
+
+const B = CONFIG.BOT;
+
+function createBotMemory() {
+  return {
+    mode: 'PAINT', tx: 0, ty: 0, hasTarget: false,
+    reactT: 0, fireT: 0, repathT: 0,
+    stuckX: 0, stuckY: 0, stuckT: 0,
+  };
+}
+
+function botThink(bot, mem, state, rng, dt) {
+  if (bot.state !== 'ALIVE') return { mx: 0, my: 0, aimX: 1, aimY: 0, fire: false, swim: false, special: false };
+  const diff = B.DIFFICULTIES[state.difficulty] || B.DIFFICULTIES[B.DEFAULT];
+  const def = CONFIG.WEAPONS[bot.weaponKind];
+  const weaponRange = def.range || def.maxRange || def.swingRange;
+
+  // --- 状態遷移（FR-BOT-001） ---
+  const enemy = nearestVisibleEnemy(bot, state, weaponRange * B.DETECT_MULT);
+  let mode;
+  if (bot.hp < 30 || bot.ink < 5) mode = 'RETREAT';
+  else if (enemy) mode = 'FIGHT';
+  else mode = 'PAINT';
+  if (mode !== mem.mode) { mem.mode = mode; mem.reactT = 0; }
+  mem.reactT += dt; mem.repathT += dt; mem.fireT += dt;
+
+  const input = { mx: 0, my: 0, aimX: bot.aimX, aimY: bot.aimY, fire: false, swim: false, special: false };
+
+  if (mode === 'RETREAT') {
+    const s = SPAWNS[bot.team];
+    setMove(input, bot, s.x, s.y, state, mem, rng);
+    input.swim = true; // 自インク上で高速回復（FR-INK-002）
+  } else if (mode === 'FIGHT' && enemy) {
+    // エイム誤差（FR-BOT-002）
+    const ang = Math.atan2(enemy.y - bot.y, enemy.x - bot.x) + (rng() * 2 - 1) * diff.aimErr;
+    input.aimX = Math.cos(ang); input.aimY = Math.sin(ang);
+    // 距離調整: 射程の60%を維持
+    const d = Math.hypot(enemy.x - bot.x, enemy.y - bot.y);
+    const want = weaponRange * 0.6;
+    if (d > want) setMove(input, bot, enemy.x, enemy.y, state, mem, rng);
+    else if (d < want * 0.5) setMove(input, bot, bot.x * 2 - enemy.x, bot.y * 2 - enemy.y, state, mem, rng);
+    // 反応遅延後に射撃（FR-BOT-002）
+    if (mem.reactT >= diff.reactDelay) {
+      if (def.kind === 'charger') {
+        input.fire = bot.charge < 1; // フルチャージで離す
+      } else if (def.kind === 'roller') {
+        input.fire = d <= def.swingRange;
+      } else {
+        input.fire = true;
+      }
+    }
+    if (canSpecial(bot)) input.special = true;
+  } else { // PAINT
+    if (!mem.hasTarget || mem.repathT > B.REPATH_TIME || reached(bot, mem)) pickPaintTarget(bot, mem, state, rng);
+    setMove(input, bot, mem.tx, mem.ty, state, mem, rng);
+    input.aimX = input.mx || bot.aimX; input.aimY = input.my || bot.aimY;
+    // 進行方向へ塗り射撃
+    if (def.kind === 'shooter') input.fire = bot.ink > 15;
+    else if (def.kind === 'charger') input.fire = mem.fireT % 1.0 < 0.55 && bot.ink > 25; // 部分チャージ連発
+    // ローラーは移動轢き塗りのみ
+    if (canSpecial(bot) && rng() < 0.02) input.special = true;
+  }
+
+  // スタック検知（REV-R1-102）
+  if (Math.hypot(bot.x - mem.stuckX, bot.y - mem.stuckY) < 4) {
+    mem.stuckT += dt;
+    if (mem.stuckT > B.STUCK_TIME) { pickPaintTarget(bot, mem, state, rng); mem.stuckT = 0; }
+  } else {
+    mem.stuckX = bot.x; mem.stuckY = bot.y; mem.stuckT = 0;
+  }
+  return input;
+}
+
+function reached(bot, mem) { return Math.hypot(bot.x - mem.tx, bot.y - mem.ty) < 24; }
+
+function pickPaintTarget(bot, mem, state, rng) {
+  const g = state.grid;
+  for (let i = 0; i < 12; i++) {
+    const cx = Math.floor(rng() * g.cols), cy = Math.floor(rng() * g.rows);
+    const v = g.cells[g.idx(cx, cy)];
+    if (v === 255 || v === bot.team) continue; // 未塗or敵色を狙う
+    mem.tx = cx * g.cell + g.cell / 2; mem.ty = cy * g.cell + g.cell / 2;
+    mem.hasTarget = true; mem.repathT = 0;
+    return;
+  }
+  mem.tx = CONFIG.WORLD.W / 2; mem.ty = CONFIG.WORLD.H / 2; mem.hasTarget = true; mem.repathT = 0;
+}
+
+// ステアリング: 目標へ直進＋前方レイで障害物回避（REV-R1-102）
+function setMove(input, bot, tx, ty, state, mem, rng) {
+  let dx = tx - bot.x, dy = ty - bot.y;
+  const l = Math.hypot(dx, dy);
+  if (l < 1e-6) return;
+  dx /= l; dy /= l;
+  if (rayBlocked(bot, dx, dy, state.grid)) {
+    for (const a of [Math.PI / 4, -Math.PI / 4, Math.PI / 2, -Math.PI / 2]) {
+      const c = Math.cos(a), s = Math.sin(a);
+      const rx = dx * c - dy * s, ry = dx * s + dy * c;
+      if (!rayBlocked(bot, rx, ry, state.grid)) { dx = rx; dy = ry; break; }
+    }
+  }
+  input.mx = dx; input.my = dy;
+}
+
+function rayBlocked(bot, dx, dy, grid) {
+  for (let d = 8; d <= B.RAY_AHEAD; d += 8) {
+    if (grid.isObstacleAt(bot.x + dx * d, bot.y + dy * d)) return true;
+  }
+  return false;
+}
+
+// 視線遮蔽つき索敵（REV-R1-006）
+function nearestVisibleEnemy(bot, state, detectR) {
+  let best = null, bestD = detectR;
+  for (const t of state.entities) {
+    if (t.team === bot.team || t.state !== 'ALIVE') continue;
+    const d = Math.hypot(t.x - bot.x, t.y - bot.y);
+    if (d > bestD) continue;
+    if (!lineOfSight(bot.x, bot.y, t.x, t.y, state.grid)) continue;
+    best = t; bestD = d;
+  }
+  return best;
+}
+
+function lineOfSight(x1, y1, x2, y2, grid) {
+  const d = Math.hypot(x2 - x1, y2 - y1);
+  const steps = Math.max(1, Math.floor(d / 8));
+  for (let i = 1; i < steps; i++) {
+    const t = i / steps;
+    if (grid.isObstacleAt(x1 + (x2 - x1) * t, y1 + (y2 - y1) * t)) return false;
+  }
+  return true;
+}
+
+// ===== src/core/hud.js =====
+// HUDモデル: DOM非依存の純関数（FR-UI-001, REV-R1-008）
+
+
+function hudModel(state, playerId = 'A1') {
+  const p = state.entities.find((e) => e.id === playerId) || state.entities[0];
+  const r = state.grid.ratios();
+  const t = Math.max(0, Math.ceil(state.time));
+  const mm = Math.floor(t / 60), ss = String(t % 60).padStart(2, '0');
+  return {
+    timeText: `${mm}:${ss}`,
+    inkPct: Math.round(p.ink),
+    hpPct: Math.round(p.hp),
+    spPct: Math.round((p.sp / CONFIG.SP.MAX) * 100),
+    spReady: p.sp >= CONFIG.SP.MAX,
+    ratioA: r[1], ratioB: r[2],
+    ratioAText: `${(r[1] * 100).toFixed(1)}%`,
+    ratioBText: `${(r[2] * 100).toFixed(1)}%`,
+    phase: state.phase,
+    splatted: p.state === 'SPLATTED',
+    respawnIn: p.state === 'SPLATTED' ? Math.ceil(p.respawnT) : 0,
+    result: state.result,
+  };
+}
+
+// ===== src/core/match.js =====
+// MatchState統括（FR-MATCH-001/002/003, DATA-004, C-005）
+
+
+
+
+
+
+
+
+
+const BOT_WEAPONS = ['shooter', 'roller', 'charger'];
+
+function createMatch({ seed = 1, playerWeapon = 'shooter', difficulty = CONFIG.BOT.DEFAULT, playerAuto = false } = {}) {
+  const g = CONFIG.GRID;
+  const grid = new PaintGrid(g.COLS, g.ROWS, g.CELL);
+  applyStage(grid);
+
+  const entities = [];
+  const botMems = new Map();
+  for (const team of [1, 2]) {
+    const s = SPAWNS[team];
+    for (let i = 0; i < CONFIG.MATCH.TEAM_SIZE; i++) {
+      const isPlayer = team === 1 && i === 0 && !playerAuto;
+      const id = `${team === 1 ? 'A' : 'B'}${i + 1}`;
+      const weaponKind = i === 0 ? (team === 1 ? playerWeapon : 'shooter') : BOT_WEAPONS[(i - 1) % BOT_WEAPONS.length];
+      const e = createEntity({
+        id, team,
+        x: s.x, y: s.y - 90 + i * 60,
+        weaponKind, isPlayer,
+      });
+      e.spawnY = e.y;
+      e.aimX = team === 1 ? 1 : -1; e.aimY = 0;
+      entities.push(e);
+      if (!isPlayer) botMems.set(id, createBotMemory());
+    }
+  }
+
+  return {
+    time: CONFIG.MATCH.DURATION, phase: 'PLAY',
+    grid, entities, bullets: [], botMems,
+    rng: mulberry32(seed), difficulty, playerAuto,
+    result: null,
+  };
+}
+
+function tick(state, playerInput = NO_INPUT, dt = 1 / 60) {
+  if (state.phase !== 'PLAY') return; // C-005: RESULT後は状態不変
+
+  for (const e of state.entities) {
+    const input = e.isPlayer ? playerInput : botThink(e, botMem(state, e), state, state.rng, dt);
+    updateEntity(e, input, state.grid, dt);
+    if (e.state === 'ALIVE') {
+      if (input.special) trySpecial(e, state);
+      updateWeapon(e, input, state, dt);
+    }
+  }
+  updateBullets(state, dt);
+
+  state.time -= dt;
+  if (state.time <= 0) finalize(state);
+}
+
+function botMem(state, e) {
+  let m = state.botMems?.get?.(e.id);
+  if (!m) {
+    if (!state.botMems) state.botMems = new Map();
+    m = createBotMemory(); state.botMems.set(e.id, m);
+  }
+  return m;
+}
+
+// 終了時点の塗り状態のみで判定（FR-MATCH-001/002）
+function finalize(state) {
+  state.time = 0;
+  state.bullets.length = 0;
+  const r = state.grid.ratios();
+  const a = r[1], b = r[2];
+  state.result = {
+    winner: a > b ? 1 : b > a ? 2 : 0, // 0=引き分け
+    pctA: a, pctB: b,
+    countA: state.grid.counts[1], countB: state.grid.counts[2],
+  };
+  state.phase = 'RESULT';
+}
+
+// ===== src/render.js =====
+// 描画層: グリッド差分→オフスクリーン→メイン（ADR-003 / EV-TECH-002/003）
+
+
+
+
+const COLORS = {
+  floor: '#23232c',
+  obstacle: '#474757',
+  obstacleEdge: '#5d5d70',
+  ink: { 1: CONFIG.BRANDING.TEAM_COLORS[1], 2: CONFIG.BRANDING.TEAM_COLORS[2] },
+  inkDark: { 1: '#cc5212', 2: '#00937f' },
+};
+
+function createRenderer(canvas) {
+  const ctx = canvas.getContext('2d');
+  const off = document.createElement('canvas');
+  off.width = CONFIG.WORLD.W; off.height = CONFIG.WORLD.H;
+  const offCtx = off.getContext('2d');
+
+  function reset(state) {
+    offCtx.fillStyle = COLORS.floor;
+    offCtx.fillRect(0, 0, off.width, off.height);
+    drawObstacles();
+    // 既存塗りの全反映（リスタート時）
+    const g = state.grid;
+    for (let i = 0; i < g.cells.length; i++) {
+      const v = g.cells[i];
+      if (v === 1 || v === 2) paintCell(g, i, v);
+    }
+  }
+
+  function drawObstacles() {
+    for (const [x, y, w, h] of obstacleRects()) {
+      offCtx.fillStyle = COLORS.obstacle;
+      offCtx.fillRect(x, y, w, h);
+      offCtx.strokeStyle = COLORS.obstacleEdge;
+      offCtx.lineWidth = 3;
+      offCtx.strokeRect(x + 1.5, y + 1.5, w - 3, h - 3);
+    }
+  }
+
+  function paintCell(g, idx, v) {
+    const cx = idx % g.cols, cy = (idx / g.cols) | 0;
+    // セル位置で色味を僅かに揺らす（決定論: 座標ハッシュ）
+    const h = ((cx * 73856093) ^ (cy * 19349663)) >>> 0;
+    offCtx.fillStyle = (h & 7) < 2 ? COLORS.inkDark[v] : COLORS.ink[v];
+    offCtx.fillRect(cx * g.cell, cy * g.cell, g.cell, g.cell);
+  }
+
+  function applyDirty(state) {
+    const g = state.grid;
+    for (const idx of g.consumeDirty()) {
+      const v = g.cells[idx];
+      if (v === 1 || v === 2) paintCell(g, idx, v);
+      else if (v === OBSTACLE) continue;
+    }
+  }
+
+  function draw(state, playerId) {
+    applyDirty(state);
+    ctx.drawImage(off, 0, 0);
+    // 弾
+    for (const b of state.bullets) {
+      ctx.fillStyle = COLORS.ink[b.team];
+      ctx.beginPath();
+      ctx.arc(b.x, b.y, Math.max(4, b.paintR * 0.3), 0, Math.PI * 2);
+      ctx.fill();
+    }
+    // キャラ（ペイントボット）
+    for (const e of state.entities) {
+      if (e.state === 'SPLATTED') { drawGhost(e); continue; }
+      drawBot(e, e.id === playerId, state);
+    }
+  }
+
+  function drawBot(e, isPlayer, state) {
+    const r = CONFIG.PLAYER.RADIUS;
+    const col = COLORS.ink[e.team];
+    const onOwn = state.grid.valueAt(e.x, e.y) === e.team;
+    const blink = e.invulnT > 0 && Math.floor(e.invulnT * 10) % 2 === 0;
+    ctx.save();
+    if (blink) ctx.globalAlpha = 0.4;
+    if (e.swimming && onOwn) {
+      // 潜行形態: 波紋
+      ctx.strokeStyle = col; ctx.lineWidth = 2.5;
+      ctx.beginPath(); ctx.arc(e.x, e.y, r * 0.7, 0, Math.PI * 2); ctx.stroke();
+      ctx.beginPath(); ctx.arc(e.x, e.y, r * 1.15, 0, Math.PI * 2); ctx.globalAlpha *= 0.45; ctx.stroke();
+    } else {
+      // 本体
+      ctx.fillStyle = col;
+      ctx.beginPath(); ctx.arc(e.x, e.y, r, 0, Math.PI * 2); ctx.fill();
+      ctx.strokeStyle = 'rgba(0,0,0,.35)'; ctx.lineWidth = 2; ctx.stroke();
+      // ノズル（エイム方向）
+      ctx.strokeStyle = '#e8e8f0'; ctx.lineWidth = 4; ctx.lineCap = 'round';
+      ctx.beginPath();
+      ctx.moveTo(e.x + e.aimX * r * 0.5, e.y + e.aimY * r * 0.5);
+      ctx.lineTo(e.x + e.aimX * (r + 7), e.y + e.aimY * (r + 7));
+      ctx.stroke();
+      // 目
+      ctx.fillStyle = '#101016';
+      const px = -e.aimY, py = e.aimX;
+      for (const s of [-1, 1]) {
+        ctx.beginPath();
+        ctx.arc(e.x + e.aimX * 4 + px * s * 5, e.y + e.aimY * 4 + py * s * 5, 2.6, 0, Math.PI * 2);
+        ctx.fill();
+      }
+      // HPリング
+      ctx.strokeStyle = 'rgba(255,255,255,.85)'; ctx.lineWidth = 3;
+      ctx.beginPath();
+      ctx.arc(e.x, e.y, r + 4, -Math.PI / 2, -Math.PI / 2 + (e.hp / 100) * Math.PI * 2);
+      ctx.stroke();
+    }
+    if (isPlayer) {
+      ctx.strokeStyle = '#ffffff'; ctx.lineWidth = 1.5; ctx.setLineDash([4, 4]);
+      ctx.beginPath(); ctx.arc(e.x, e.y, r + 9, 0, Math.PI * 2); ctx.stroke();
+      ctx.setLineDash([]);
+    }
+    ctx.restore();
+  }
+
+  function drawGhost(e) {
+    ctx.save();
+    ctx.globalAlpha = 0.5;
+    ctx.fillStyle = '#9aa';
+    ctx.font = 'bold 16px sans-serif'; ctx.textAlign = 'center';
+    ctx.fillText('×', e.x, e.y + 6);
+    ctx.restore();
+  }
+
+  return { reset, draw };
+}
+
+// ===== src/game.js =====
+// ブラウザ統括: 入力・ループ・画面遷移・HUD（FR-UI-001/002/003）
+
+
+
+
+
+const DT = 1 / 60;
+const $ = (id) => document.getElementById(id);
+
+let state = null;
+let renderer = null;
+let selectedWeapon = 'shooter'; // デフォルト武器=シューター（REV-R1-106）
+const keys = new Set();
+const mouse = { x: 640, y: 360, down: false };
+
+function setup() {
+  const canvas = $('game');
+  renderer = createRenderer(canvas);
+
+  document.title = CONFIG.BRANDING.TITLE;
+  $('title-name').textContent = CONFIG.BRANDING.TITLE;
+
+  // 武器選択（FR-UI-003）
+  for (const btn of document.querySelectorAll('[data-weapon]')) {
+    btn.querySelector('.wname').textContent = CONFIG.WEAPONS[btn.dataset.weapon].name;
+    btn.addEventListener('click', () => {
+      selectedWeapon = btn.dataset.weapon;
+      for (const b of document.querySelectorAll('[data-weapon]')) b.classList.toggle('sel', b === btn);
+    });
+  }
+  document.querySelector('[data-weapon="shooter"]').classList.add('sel');
+  $('start').addEventListener('click', startMatch);
+  $('rematch').addEventListener('click', () => { show('title'); });
+
+  // 入力（FR-UI-002: WASD/マウス/Space/E）
+  addEventListener('keydown', (ev) => {
+    if (['KeyW', 'KeyA', 'KeyS', 'KeyD', 'Space', 'KeyE'].includes(ev.code)) ev.preventDefault();
+    keys.add(ev.code);
+  });
+  addEventListener('keyup', (ev) => keys.delete(ev.code));
+  canvas.addEventListener('mousemove', (ev) => {
+    const r = canvas.getBoundingClientRect();
+    mouse.x = (ev.clientX - r.left) * (canvas.width / r.width);
+    mouse.y = (ev.clientY - r.top) * (canvas.height / r.height);
+  });
+  addEventListener('mousedown', (ev) => { if (ev.button === 0) mouse.down = true; });
+  addEventListener('mouseup', (ev) => { if (ev.button === 0) mouse.down = false; });
+
+  show('title');
+  requestAnimationFrame(loop);
+}
+
+function startMatch() {
+  state = createMatch({
+    seed: (Date.now() % 2147483647) | 1,
+    playerWeapon: selectedWeapon,
+    difficulty: CONFIG.BOT.DEFAULT,
+  });
+  renderer.reset(state);
+  show('play');
+}
+
+function playerInput() {
+  const p = state.entities.find((e) => e.isPlayer);
+  const mx = (keys.has('KeyD') ? 1 : 0) - (keys.has('KeyA') ? 1 : 0);
+  const my = (keys.has('KeyS') ? 1 : 0) - (keys.has('KeyW') ? 1 : 0);
+  return {
+    mx, my,
+    aimX: mouse.x - p.x, aimY: mouse.y - p.y,
+    fire: mouse.down,
+    swim: keys.has('Space'),
+    special: keys.has('KeyE'),
+  };
+}
+
+let last = 0, acc = 0;
+function loop(t) {
+  requestAnimationFrame(loop);
+  const elapsed = Math.min(0.1, (t - last) / 1000); last = t;
+  if (!state || state.phase === 'TITLE') return;
+
+  if (state.phase === 'PLAY') {
+    acc += elapsed;
+    while (acc >= DT) { tick(state, playerInput(), DT); acc -= DT; }
+  }
+  renderer.draw(state, 'A1');
+  updateHUD();
+  if (state.phase === 'RESULT' && !$('result').classList.contains('on')) showResult();
+}
+
+// HUD（FR-UI-001: 残り時間・インク・SP・塗り率バー）
+function updateHUD() {
+  const h = hudModel(state, 'A1');
+  $('time').textContent = h.timeText;
+  $('ink-bar').style.width = `${h.inkPct}%`;
+  $('hp-bar').style.width = `${h.hpPct}%`;
+  $('sp-bar').style.width = `${h.spPct}%`;
+  $('sp-wrap').classList.toggle('ready', h.spReady);
+  const total = Math.max(0.0001, h.ratioA + h.ratioB);
+  $('ratio-a').style.width = `${(h.ratioA / total) * 100}%`;
+  $('ratio-b').style.width = `${(h.ratioB / total) * 100}%`;
+  $('ratio-a-pct').textContent = h.ratioAText;
+  $('ratio-b-pct').textContent = h.ratioBText;
+  $('respawn').classList.toggle('on', h.splatted);
+  if (h.splatted) $('respawn-n').textContent = h.respawnIn;
+}
+
+function showResult() {
+  const r = state.result;
+  const youWin = r.winner === 1;
+  $('result-title').textContent = r.winner === 0 ? '引き分け！' : youWin ? 'WIN！' : 'LOSE…';
+  $('result-title').style.color = r.winner === 0 ? '#fff' : CONFIG.BRANDING.TEAM_COLORS[r.winner];
+  $('result-a').textContent = `${CONFIG.BRANDING.TEAM_NAMES[1]} ${(r.pctA * 100).toFixed(1)}%`;
+  $('result-b').textContent = `${CONFIG.BRANDING.TEAM_NAMES[2]} ${(r.pctB * 100).toFixed(1)}%`;
+  $('result-bar-a').style.width = `${(r.pctA / (r.pctA + r.pctB || 1)) * 100}%`;
+  show('result');
+}
+
+function show(screen) {
+  $('title').classList.toggle('on', screen === 'title');
+  $('result').classList.toggle('on', screen === 'result');
+  if (screen === 'title' && state) state = null;
+}
+
+setup();
+
+</script>
+</body>
+</html>

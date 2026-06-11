@@ -1,0 +1,132 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
+<meta name="mobile-web-app-capable" content="yes">
+<title>INK CLASH</title>
+<style>
+  :root { --a: #FF6B1A; --b: #00B8A9; }
+  * { box-sizing: border-box; margin: 0; -webkit-tap-highlight-color: transparent; }
+  html, body { height: 100%; overflow: hidden; background: #10101a; color: #eee;
+    font-family: 'Segoe UI', 'Hiragino Sans', sans-serif; touch-action: none; overscroll-behavior: none; }
+  #game { position: fixed; inset: 0; width: 100vw; height: 100vh; display: block; }
+  #touch-layer { position: fixed; inset: 0; }
+  .hidden { display: none !important; }
+
+  /* 仮想スティック（FR-TOUCH-001） */
+  #stick { position: fixed; width: 120px; height: 120px; margin: -60px 0 0 -60px; border-radius: 50%;
+    border: 2px solid #ffffff44; background: #ffffff12; display: none; pointer-events: none; }
+  #stick.on { display: block; }
+  #stick-knob { position: absolute; left: 50%; top: 50%; width: 52px; height: 52px; margin: -26px 0 0 -26px;
+    border-radius: 50%; background: #ffffff66; }
+
+  /* ボタン（FR-TOUCH-002） */
+  .btn { position: fixed; border-radius: 50%; border: 2px solid #ffffff55; background: #ffffff1c;
+    color: #fff; font-weight: 800; display: flex; align-items: center; justify-content: center;
+    user-select: none; -webkit-user-select: none; z-index: 5; }
+  .btn.pressed { background: #ffffff45; }
+  #btn-fire { right: max(20px, env(safe-area-inset-right)); bottom: 76px; width: 96px; height: 96px;
+    font-size: 17px; background: #ff6b1a3d; border-color: var(--a); }
+  #btn-fire.pressed { background: #ff6b1a88; }
+  #btn-swim { right: 132px; bottom: 30px; width: 68px; height: 68px; font-size: 12px;
+    background: #00b8a92e; border-color: var(--b); }
+  #btn-swim.pressed { background: #00b8a980; }
+  #btn-sp { right: 36px; bottom: 196px; width: 64px; height: 64px; font-size: 11px;
+    background: conic-gradient(#ffd23e calc(var(--p, 0) * 1%), #ffffff18 0); border-color: #ffd23e; }
+  #btn-sp.ready { box-shadow: 0 0 18px #ffd23e; animation: pulse 1s infinite; }
+  @keyframes pulse { 50% { transform: scale(1.08); } }
+  #sp-ring { position: absolute; inset: 4px; border-radius: 50%; background: #10101adb;
+    display: flex; align-items: center; justify-content: center; }
+
+  /* HUD */
+  #hud { position: fixed; inset: 0; pointer-events: none; z-index: 4; }
+  #hud-top { position: absolute; top: max(8px, env(safe-area-inset-top)); left: 50%; transform: translateX(-50%);
+    display: flex; flex-direction: column; align-items: center; gap: 3px; width: min(46%, 420px); }
+  #time { font-size: 24px; font-weight: 800; text-shadow: 0 2px 6px #000c; }
+  #ratio { width: 100%; height: 10px; border-radius: 5px; overflow: hidden; display: flex; background: #ffffff22; }
+  #ratio-a { background: var(--a); height: 100%; transition: width .3s; }
+  #ratio-b { background: var(--b); height: 100%; flex: 1; transition: width .3s; }
+  #ratio-pcts { width: 100%; display: flex; justify-content: space-between; font-size: 11px; font-weight: 700; }
+  #ratio-a-pct { color: var(--a); } #ratio-b-pct { color: var(--b); }
+  #hud-bl { position: absolute; left: max(14px, env(safe-area-inset-left)); top: max(10px, env(safe-area-inset-top)); width: 130px; }
+  .bar-label { font-size: 9px; opacity: .8; margin-bottom: 2px; letter-spacing: .1em; }
+  .bar { height: 8px; background: #ffffff22; border-radius: 4px; overflow: hidden; margin-bottom: 5px; }
+  .bar > div { height: 100%; transition: width .12s; }
+  #ink-bar { background: var(--a); width: 100%; }
+  #hp-bar { background: #6fe06f; width: 100%; }
+  #respawn { position: fixed; inset: 0; display: none; align-items: center; justify-content: center;
+    background: #0009; font-size: 22px; font-weight: 800; z-index: 6; }
+  #respawn.on { display: flex; }
+
+  /* 画面 */
+  .screen { position: fixed; inset: 0; display: none; flex-direction: column; align-items: center;
+    justify-content: center; gap: 14px; background: #101018f2; z-index: 10; padding: 12px; }
+  .screen.on { display: flex; }
+  #title-name { font-size: clamp(38px, 9vw, 64px); font-weight: 900; letter-spacing: .04em;
+    background: linear-gradient(90deg, var(--a), var(--b)); -webkit-background-clip: text; background-clip: text; color: transparent; }
+  .sub { opacity: .8; font-size: 13px; text-align: center; }
+  #weapons { display: flex; gap: 8px; flex-wrap: wrap; justify-content: center; }
+  [data-weapon] { background: #23232c; color: #eee; border: 2px solid #444; border-radius: 10px;
+    padding: 10px 12px; cursor: pointer; font-size: 12px; width: 150px; }
+  [data-weapon].sel { border-color: var(--a); box-shadow: 0 0 10px #ff6b1a55; }
+  .wname { font-weight: 800; font-size: 14px; display: block; margin-bottom: 3px; }
+  .wdesc { font-size: 10px; opacity: .75; }
+  button.big { background: linear-gradient(90deg, var(--a), #ff9c1a); border: none; color: #fff;
+    font-size: 18px; font-weight: 800; padding: 12px 44px; border-radius: 999px; cursor: pointer; }
+  #controls-hint { font-size: 11px; opacity: .7; line-height: 1.7; text-align: center; }
+  #result-title { font-size: clamp(40px, 10vw, 56px); font-weight: 900; }
+  #result-bar { width: 70%; max-width: 420px; height: 18px; border-radius: 9px; overflow: hidden; display: flex; background: var(--b); }
+  #result-bar-a { background: var(--a); height: 100%; }
+  #result-pcts { width: 70%; max-width: 420px; display: flex; justify-content: space-between; font-weight: 700; font-size: 14px; }
+  #result-a { color: var(--a); } #result-b { color: var(--b); }
+</style>
+</head>
+<body>
+<canvas id="game"></canvas>
+<div id="touch-layer"></div>
+<div id="stick"><div id="stick-knob"></div></div>
+
+<div id="hud" class="hidden">
+  <div id="hud-top">
+    <div id="time">3:00</div>
+    <div id="ratio"><div id="ratio-a"></div><div id="ratio-b"></div></div>
+    <div id="ratio-pcts"><span id="ratio-a-pct">0%</span><span id="ratio-b-pct">0%</span></div>
+  </div>
+  <div id="hud-bl">
+    <div class="bar-label">インク</div><div class="bar"><div id="ink-bar"></div></div>
+    <div class="bar-label">HP</div><div class="bar"><div id="hp-bar"></div></div>
+  </div>
+</div>
+<button id="btn-fire" class="btn">ショット</button>
+<button id="btn-swim" class="btn">潜行</button>
+<button id="btn-sp" class="btn"><span id="sp-ring">SP</span></button>
+<div id="respawn">復活まで <span id="respawn-n">3</span> 秒</div>
+
+<div id="title" class="screen on">
+  <div id="title-name">INK CLASH</div>
+  <div class="sub">インクを塗り合う4v4対戦！ 3分間でより広く塗ったチームの勝ち</div>
+  <div id="weapons">
+    <button data-weapon="shooter"><span class="wname"></span><span class="wdesc">連射が利く万能タイプ</span></button>
+    <button data-weapon="roller"><span class="wname"></span><span class="wdesc">走るだけで道を塗る・一撃必倒</span></button>
+    <button data-weapon="charger"><span class="wname"></span><span class="wdesc">長押しチャージ・最長射程</span></button>
+  </div>
+  <button id="start" class="big">バトル開始</button>
+  <div id="controls-hint">
+    左半分: スティックで移動 ／ 右半分: スワイプで視点旋回<br>
+    ショット長押しで連射 ／ 潜行＝自インクで高速移動＆回復 ／ SP＝スペシャル<br>
+    （PC: WASD移動・ドラッグ旋回・J or ショットボタンで射撃・Space潜行・E）
+  </div>
+</div>
+
+<div id="result" class="screen">
+  <div id="result-title"></div>
+  <div id="result-bar"><div id="result-bar-a"></div></div>
+  <div id="result-pcts"><span id="result-a"></span><span id="result-b"></span></div>
+  <button id="rematch" class="big">もう一回</button>
+</div>
+
+<script src="./vendor/three.min.js"></script>
+<script type="module" src="./src/game3d.js"></script>
+</body>
+</html>
