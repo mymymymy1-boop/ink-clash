@@ -53,7 +53,8 @@
   #ratio { width: 100%; height: 10px; border-radius: 5px; overflow: hidden; display: flex; background: #ffffff22; }
   #ratio-a { background: var(--a); height: 100%; transition: width .3s; }
   #ratio-b { background: var(--b); height: 100%; flex: 1; transition: width .3s; }
-  #ratio-pcts { width: 100%; display: flex; justify-content: space-between; font-size: 11px; font-weight: 700; }
+  #ratio-pcts { width: 100%; display: flex; justify-content: space-between; font-size: 12px; font-weight: 800;
+    text-shadow: 0 1px 3px #000c, 0 0 6px #0008; }
   #ratio-a-pct { color: var(--a); } #ratio-b-pct { color: var(--b); }
   #hud-bl { position: absolute; left: max(14px, env(safe-area-inset-left)); top: max(10px, env(safe-area-inset-top)); width: 130px; }
   .bar-label { font-size: 9px; opacity: .8; margin-bottom: 2px; letter-spacing: .1em; }
@@ -1000,10 +1001,14 @@ function finalize(state) {
 // 床塗りテクスチャ: PaintGrid → 2D Canvas（ADR-007: THREE.CanvasTextureの元絵）
 
 
+// 参考画像分析(2026-06-12): 本物は「明るい無彩色の地面 × 超高彩度インク」。
+// インクは縁が濃く・中央が明るい立体的なしぶき。
 const COLORS = {
-  floor: '#3a3a46',
+  floor: '#cdcac0',          // 明るいコンクリート
+  floorLine: 'rgba(0,0,0,.07)',
   ink: { 1: CONFIG.BRANDING.TEAM_COLORS[1], 2: CONFIG.BRANDING.TEAM_COLORS[2] },
-  inkDark: { 1: '#cc5212', 2: '#00937f' },
+  inkDark: { 1: '#b34400', 2: '#007a6c' },   // 縁（濃）
+  inkLight: { 1: '#ff852f', 2: '#1ed3bd' },  // ハイライト（彩度維持で少しだけ明）
 };
 
 function createPaintCanvas() {
@@ -1014,10 +1019,10 @@ function createPaintCanvas() {
   function reset(state) {
     ctx.fillStyle = COLORS.floor;
     ctx.fillRect(0, 0, canvas.width, canvas.height);
-    // 床のうっすらグリッド模様（視認性向上）
-    ctx.strokeStyle = 'rgba(255,255,255,.04)'; ctx.lineWidth = 1;
-    for (let x = 0; x <= canvas.width; x += 64) { ctx.beginPath(); ctx.moveTo(x, 0); ctx.lineTo(x, canvas.height); ctx.stroke(); }
-    for (let y = 0; y <= canvas.height; y += 64) { ctx.beginPath(); ctx.moveTo(0, y); ctx.lineTo(canvas.width, y); ctx.stroke(); }
+    // コンクリートのタイル目地
+    ctx.strokeStyle = COLORS.floorLine; ctx.lineWidth = 2;
+    for (let x = 0; x <= canvas.width; x += 80) { ctx.beginPath(); ctx.moveTo(x, 0); ctx.lineTo(x, canvas.height); ctx.stroke(); }
+    for (let y = 0; y <= canvas.height; y += 80) { ctx.beginPath(); ctx.moveTo(0, y); ctx.lineTo(canvas.width, y); ctx.stroke(); }
     const g = state.grid;
     for (let i = 0; i < g.cells.length; i++) {
       const v = g.cells[i];
@@ -1027,15 +1032,23 @@ function createPaintCanvas() {
   }
 
   function paintCell(g, idx, v) {
-    // v3: 矩形でなく重なり合う円で「インクのしぶき」感を出す（座標ハッシュで決定論）
+    // v3.1: 縁が濃く中央が明るい立体的なしぶき（座標ハッシュで決定論）
     const cx = idx % g.cols, cy = (idx / g.cols) | 0;
     const h = ((cx * 73856093) ^ (cy * 19349663)) >>> 0;
     const px = cx * g.cell + g.cell / 2 + ((h & 3) - 1.5);
     const py = cy * g.cell + g.cell / 2 + (((h >> 2) & 3) - 1.5);
-    ctx.fillStyle = (h & 7) < 2 ? COLORS.inkDark[v] : COLORS.ink[v];
-    ctx.beginPath();
-    ctx.arc(px, py, g.cell * 0.78, 0, Math.PI * 2);
-    ctx.fill();
+    const r = g.cell * (0.72 + ((h >> 4) & 3) * 0.06);
+    // 縁（濃色をひと回り大きく）
+    ctx.fillStyle = COLORS.inkDark[v];
+    ctx.beginPath(); ctx.arc(px, py, r + 1.6, 0, Math.PI * 2); ctx.fill();
+    // 本体
+    ctx.fillStyle = COLORS.ink[v];
+    ctx.beginPath(); ctx.arc(px, py, r, 0, Math.PI * 2); ctx.fill();
+    // ハイライト（控えめに・左上寄り）
+    if ((h & 15) < 3) {
+      ctx.fillStyle = COLORS.inkLight[v];
+      ctx.beginPath(); ctx.arc(px - r * 0.3, py - r * 0.3, r * 0.3, 0, Math.PI * 2); ctx.fill();
+    }
   }
 
   // 差分反映。塗り更新があれば true（→ texture.needsUpdate）
@@ -1149,7 +1162,8 @@ function createSound() {
 const FIELD_W = CONFIG.WORLD.W, FIELD_H = CONFIG.WORLD.H; // 注: バンドル結合のためトップレベル名は全モジュールで一意にする
 const TEAM_HEX = { 1: 0xff6b1a, 2: 0x00b8a9 };
 const TEAM_DARK = { 1: 0xb24400, 2: 0x007a6e };
-const CAM_DIST = 110, CAM_HEIGHT = 92, CAM_LOOK_AHEAD = 95;
+// 参考画像分析(2026-06-12): 近接・低めのTPSカメラ／明るい昼の渓谷／インクが主役になる無彩色環境
+const CAM_DIST = 78, CAM_HEIGHT = 52, CAM_LOOK_AHEAD = 130, CAM_LOOK_UP = 16;
 const PLT_H = CONFIG.TERRAIN.PLATFORM_H;
 
 function createRenderer3D(canvas) {
@@ -1157,14 +1171,14 @@ function createRenderer3D(canvas) {
   renderer.setPixelRatio(Math.min(2, devicePixelRatio || 1));
 
   const scene = new THREE.Scene();
-  scene.background = new THREE.Color(0x1c2740); // 夕空風の濃紺
-  scene.fog = new THREE.Fog(0x1c2740, 800, 1900);
+  scene.background = new THREE.Color(0x87c8ee); // 昼の青空
+  scene.fog = new THREE.Fog(0xb8dcef, 900, 2400);
 
-  const camera = new THREE.PerspectiveCamera(62, 16 / 9, 1, 3000);
+  const camera = new THREE.PerspectiveCamera(66, 16 / 9, 1, 4000);
   const clock = new THREE.Clock();
 
-  scene.add(new THREE.HemisphereLight(0xcfe0ff, 0x3a3344, 1.0));
-  const sun = new THREE.DirectionalLight(0xfff2dd, 0.75);
+  scene.add(new THREE.HemisphereLight(0xe6f2ff, 0x8d8d92, 1.12)); // 地面反射はニュートラルに（インクの色被り防止）
+  const sun = new THREE.DirectionalLight(0xfffaf0, 0.95);
   sun.position.set(300, 600, 200);
   scene.add(sun);
 
@@ -1180,35 +1194,89 @@ function createRenderer3D(canvas) {
   floor.position.set(FIELD_W / 2, 0, FIELD_H / 2);
   scene.add(floor);
 
-  // 場外の地面
+  // 場外の地面（砂漠）
   const ground = new THREE.Mesh(
     new THREE.PlaneGeometry(8000, 8000),
-    new THREE.MeshLambertMaterial({ color: 0x141420 }),
+    new THREE.MeshLambertMaterial({ color: 0xd9b98a }),
   );
   ground.rotation.x = -Math.PI / 2;
   ground.position.set(FIELD_W / 2, -2, FIELD_H / 2);
   scene.add(ground);
 
-  // 外周フェンス
-  const wallMat = new THREE.MeshLambertMaterial({ color: 0x39394a });
+  // 遠景の渓谷（岩山）
+  const rockCols = [0xc08552, 0xb3754a, 0xd49b6a, 0xa86f48];
+  const rocks = [
+    [-500, -350, 700, 260, 380], [600, -500, 900, 340, 420], [1500, -380, 760, 300, 360],
+    [-550, 800, 800, 280, 400], [700, 900, 1000, 360, 430], [1600, 820, 700, 260, 380],
+    [-700, 200, 500, 320, 400], [1750, 250, 520, 310, 420],
+  ];
+  rocks.forEach(([x, z, w, h, d], i) => {
+    const m = new THREE.Mesh(new THREE.BoxGeometry(w, h, d),
+      new THREE.MeshLambertMaterial({ color: rockCols[i % rockCols.length] }));
+    m.position.set(x + w / 2, h / 2 - 20, z + d / 2);
+    m.rotation.y = (i * 0.7) % 0.5 - 0.25;
+    scene.add(m);
+  });
+
+  // 看板（タイトルロゴ・オリジナル）
+  const bbCanvas = document.createElement('canvas');
+  bbCanvas.width = 512; bbCanvas.height = 160;
+  const bctx = bbCanvas.getContext('2d');
+  bctx.fillStyle = '#1c1c24'; bctx.fillRect(0, 0, 512, 160);
+  const grad = bctx.createLinearGradient(0, 0, 512, 0);
+  grad.addColorStop(0, CONFIG.BRANDING.TEAM_COLORS[1]); grad.addColorStop(1, CONFIG.BRANDING.TEAM_COLORS[2]);
+  bctx.fillStyle = grad; bctx.font = '900 86px sans-serif'; bctx.textAlign = 'center';
+  bctx.fillText(CONFIG.BRANDING.TITLE, 256, 112);
+  const bb = new THREE.Mesh(new THREE.PlaneGeometry(420, 130),
+    new THREE.MeshBasicMaterial({ map: new THREE.CanvasTexture(bbCanvas) }));
+  bb.position.set(FIELD_W / 2, 150, -120);
+  scene.add(bb);
+  for (const px of [FIELD_W / 2 - 180, FIELD_W / 2 + 180]) {
+    const pole = new THREE.Mesh(new THREE.CylinderGeometry(5, 5, 160, 8), new THREE.MeshLambertMaterial({ color: 0x6b6b75 }));
+    pole.position.set(px, 80, -120);
+    scene.add(pole);
+  }
+
+  // 外周フェンス（低め・明るいコンクリ）
+  const wallMat = new THREE.MeshLambertMaterial({ color: 0xa7a39a });
   for (const [x, z, w, d] of [[-20, -20, FIELD_W + 40, 20], [-20, FIELD_H, FIELD_W + 40, 20], [-20, 0, 20, FIELD_H], [FIELD_W, 0, 20, FIELD_H]]) {
     const m = new THREE.Mesh(new THREE.BoxGeometry(w, 60, d), wallMat);
     m.position.set(x + w / 2, 30, z + d / 2);
     scene.add(m);
   }
 
-  // 壁（遮蔽）
-  const obsMat = new THREE.MeshLambertMaterial({ color: 0x5a5a6e });
-  const obsTop = new THREE.MeshLambertMaterial({ color: 0x6e6e84 });
+  // 注意縞テクスチャ（工事現場感）
+  const stCanvas = document.createElement('canvas');
+  stCanvas.width = 64; stCanvas.height = 16;
+  const sctx = stCanvas.getContext('2d');
+  sctx.fillStyle = '#e8c11c'; sctx.fillRect(0, 0, 64, 16);
+  sctx.fillStyle = '#222'; sctx.beginPath();
+  for (let x = -16; x < 64; x += 24) { sctx.moveTo(x, 16); sctx.lineTo(x + 12, 0); sctx.lineTo(x + 24, 0); sctx.lineTo(x + 12, 16); }
+  sctx.fill();
+  const stripeTex = new THREE.CanvasTexture(stCanvas);
+  stripeTex.wrapS = THREE.RepeatWrapping; stripeTex.repeat.set(4, 1);
+  const stripeMat = new THREE.MeshBasicMaterial({ map: stripeTex });
+
+  // 壁（遮蔽・明るいコンクリ＋天面に注意縞）
+  const obsMat = new THREE.MeshLambertMaterial({ color: 0x969288 });
   for (const [x, y, w, h] of obstacleRects()) {
     const m = new THREE.Mesh(new THREE.BoxGeometry(w, CONFIG.TERRAIN.WALL_H, h),
-      [obsMat, obsMat, obsTop, obsMat, obsMat, obsMat]);
+      [obsMat, obsMat, stripeMat, obsMat, obsMat, obsMat]);
     m.position.set(x + w / 2, CONFIG.TERRAIN.WALL_H / 2, y + h / 2);
     scene.add(m);
   }
 
+  // スポーンパッド
+  for (const team of [1, 2]) {
+    const s = team === 1 ? { x: 70, y: 360 } : { x: FIELD_W - 70, y: 360 };
+    const pad = new THREE.Mesh(new THREE.CylinderGeometry(46, 50, 4, 24),
+      new THREE.MeshLambertMaterial({ color: TEAM_HEX[team] }));
+    pad.position.set(s.x, 2, s.y);
+    scene.add(pad);
+  }
+
   // 台（上面に塗りテクスチャの該当領域を貼る＝塗りが台の上にも見える）
-  const pltSide = new THREE.MeshLambertMaterial({ color: 0x46465a });
+  const pltSide = new THREE.MeshLambertMaterial({ color: 0xb1ada3 });
   const pltTexes = [];
   for (const [x, y, w, h] of platformRects()) {
     const t2 = tex.clone();
@@ -1229,55 +1297,84 @@ function createRenderer3D(canvas) {
     slosher: [7, 5, 7], spinner: [5.5, 5.5, 11], blaster: [4.5, 4.5, 10],
   };
   function makeBot(e) {
+    // 参考画像準拠の頭身バランス: 大きな頭・小さな体・両手持ち武器・カラフルな服
     const g = new THREE.Group();
     const col = new THREE.MeshLambertMaterial({ color: TEAM_HEX[e.team] });
     const dark = new THREE.MeshLambertMaterial({ color: TEAM_DARK[e.team] });
-    const skin = new THREE.MeshLambertMaterial({ color: 0xf2e6d8 });
+    const skin = new THREE.MeshLambertMaterial({ color: 0xf6dfc4 });
+    const shirt = new THREE.MeshLambertMaterial({ color: 0xf2f2ee });
+    const shorts = new THREE.MeshLambertMaterial({ color: 0x33333d });
 
     const legs = [];
     for (const s of [-1, 1]) {
-      const leg = new THREE.Mesh(new THREE.BoxGeometry(3.6, 10, 3.6), dark);
-      leg.position.set(s * 4, 10, 0);
-      leg.geometry.translate(0, -5, 0); // 腰から振る
+      const leg = new THREE.Mesh(new THREE.BoxGeometry(3.8, 9, 3.8), skin);
+      leg.position.set(s * 3.6, 12, 0);
+      leg.geometry.translate(0, -4.5, 0); // 腰から振る
+      const shoe = new THREE.Mesh(new THREE.BoxGeometry(4.4, 2.6, 6.4), col);
+      shoe.position.set(0, -8.6, 1);
+      leg.add(shoe);
       g.add(leg); legs.push(leg);
     }
-    const body = new THREE.Mesh(new THREE.BoxGeometry(12, 12, 7.5), col);
-    body.position.y = 16;
+    const hip = new THREE.Mesh(new THREE.BoxGeometry(9.5, 5, 6.5), shorts);
+    hip.position.y = 13.5;
+    g.add(hip);
+    const body = new THREE.Mesh(new THREE.BoxGeometry(10.5, 9, 6.5), shirt);
+    body.position.y = 20;
     g.add(body);
-    const head = new THREE.Mesh(new THREE.SphereGeometry(6.4, 16, 12), skin);
-    head.position.y = 27;
-    g.add(head);
-    const visor = new THREE.Mesh(new THREE.BoxGeometry(9.5, 3.4, 2.2), new THREE.MeshBasicMaterial({ color: 0x16161e }));
-    visor.position.set(0, 27.6, 5.4);
-    g.add(visor);
-    const hair = new THREE.Mesh(new THREE.SphereGeometry(6.6, 12, 8, 0, Math.PI * 2, 0, Math.PI / 2.4), col);
-    hair.position.y = 28.4;
-    g.add(hair);
 
+    // 大きな頭＋顔
+    const head = new THREE.Mesh(new THREE.SphereGeometry(8.2, 18, 14), skin);
+    head.position.y = 33;
+    g.add(head);
+    const eyes = [];
+    for (const s of [-1, 1]) {
+      const white = new THREE.Mesh(new THREE.SphereGeometry(2.3, 8, 8), new THREE.MeshBasicMaterial({ color: 0xffffff }));
+      white.position.set(s * 3.1, 33.6, 7.0);
+      g.add(white); eyes.push(white);
+      const pupil = new THREE.Mesh(new THREE.SphereGeometry(1.15, 8, 8), new THREE.MeshBasicMaterial({ color: 0x16161e }));
+      pupil.position.set(s * 3.1, 33.6, 8.9);
+      g.add(pupil); eyes.push(pupil);
+    }
+    // チームカラーのキャップ
+    const cap = new THREE.Mesh(new THREE.SphereGeometry(8.5, 14, 8, 0, Math.PI * 2, 0, Math.PI / 2.3), col);
+    cap.position.y = 34.4;
+    g.add(cap);
+    const brim = new THREE.Mesh(new THREE.BoxGeometry(8.5, 1.4, 5.5), dark);
+    brim.position.set(0, 36.4, 8.6);
+    g.add(brim);
+
+    // 両腕（前に構える）
     const arms = [];
     for (const s of [-1, 1]) {
-      const arm = new THREE.Mesh(new THREE.BoxGeometry(3, 9.5, 3), col);
-      arm.position.set(s * 8.4, 21, 0);
+      const arm = new THREE.Mesh(new THREE.BoxGeometry(3, 9, 3), skin);
+      arm.position.set(s * 7.2, 23.5, 1);
       arm.geometry.translate(0, -4.5, 0);
-      g.add(arm); arms.push(arm);
+      arm.rotation.x = -1.0; // 前へ
+      g.add(arms[arms.length] = arm);
     }
-    // 武器（右手前方）
+    // 武器（両手の中央・大きめ）
     const bd = barrelByKind[e.weaponKind] || barrelByKind.shooter;
-    const gun = new THREE.Mesh(new THREE.BoxGeometry(...bd), new THREE.MeshLambertMaterial({ color: 0xe8e8f0 }));
-    gun.position.set(6.5, 15, 8);
+    const gun = new THREE.Mesh(new THREE.BoxGeometry(bd[0] * 1.25, bd[1] * 1.25, bd[2] * 1.25), new THREE.MeshLambertMaterial({ color: 0xeaeaef }));
+    gun.position.set(0, 19, 10);
     g.add(gun);
-    const gunTip = new THREE.Mesh(new THREE.BoxGeometry(bd[0] * 0.7, bd[1] * 0.7, 3), col);
-    gunTip.position.set(6.5, 15, 8 + bd[2] / 2 + 1.4);
+    const gunTip = new THREE.Mesh(new THREE.BoxGeometry(bd[0], bd[1], 4), col);
+    gunTip.position.set(0, 19, 10 + bd[2] * 0.625 + 2);
     g.add(gunTip);
 
     // 背中のインクタンク（残量が見える）
-    const tank = new THREE.Mesh(new THREE.CylinderGeometry(4.4, 4.4, 13, 10),
-      new THREE.MeshLambertMaterial({ color: 0xccccdd, transparent: true, opacity: 0.45 }));
-    tank.position.set(0, 18, -6.8);
+    const tank = new THREE.Mesh(new THREE.CylinderGeometry(4.6, 4.6, 13, 10),
+      new THREE.MeshLambertMaterial({ color: 0xdddde6, transparent: true, opacity: 0.5 }));
+    tank.position.set(0, 22, -6.6);
     g.add(tank);
-    const ink = new THREE.Mesh(new THREE.CylinderGeometry(3.4, 3.4, 12, 10), col);
-    ink.position.set(0, 18, -6.8);
+    const ink = new THREE.Mesh(new THREE.CylinderGeometry(3.5, 3.5, 12, 10), col);
+    ink.position.set(0, 22, -6.6);
     g.add(ink);
+
+    // 落ち影（参考画像: 強い日差しの影が立体感の要）
+    const shadow = new THREE.Mesh(new THREE.CircleGeometry(11, 18),
+      new THREE.MeshBasicMaterial({ color: 0x000000, transparent: true, opacity: 0.28 }));
+    shadow.rotation.x = -Math.PI / 2;
+    scene.add(shadow);
 
     // 潜行形態（人型を隠してディスク表示）
     const swim = new THREE.Group();
@@ -1291,7 +1388,8 @@ function createRenderer3D(canvas) {
     swim.add(ripple);
     g.add(swim);
 
-    g.userData = { legs, arms, body, ink, swim, humanoid: [legs[0], legs[1], arms[0], arms[1], body, head, visor, hair, gun, gunTip, tank], lastX: e.x, lastY: e.y, phase: 0 };
+    const humanoid = [legs[0], legs[1], hip, body, head, cap, brim, gun, gunTip, tank, ...arms, ...eyes];
+    g.userData = { legs, arms, body, ink, swim, shadow, humanoid, lastX: e.x, lastY: e.y, phase: 0 };
     scene.add(g);
     return g;
   }
@@ -1349,7 +1447,7 @@ function createRenderer3D(canvas) {
   // 自機マーカー
   const marker = new THREE.Mesh(
     new THREE.RingGeometry(17, 21, 28),
-    new THREE.MeshBasicMaterial({ color: 0xffffff, transparent: true, opacity: 0.85, side: THREE.DoubleSide }),
+    new THREE.MeshBasicMaterial({ color: 0x2a2a35, transparent: true, opacity: 0.8, side: THREE.DoubleSide }),
   );
   marker.rotation.x = -Math.PI / 2;
   scene.add(marker);
@@ -1358,7 +1456,7 @@ function createRenderer3D(canvas) {
     paint.reset(state);
     tex.needsUpdate = true;
     for (const t2 of pltTexes) t2.needsUpdate = true;
-    for (const g of bots.values()) scene.remove(g);
+    for (const g of bots.values()) { if (g.userData.shadow) scene.remove(g.userData.shadow); scene.remove(g); }
     bots.clear();
     for (const p of parts) p.mesh.visible = false;
   }
@@ -1380,8 +1478,8 @@ function createRenderer3D(canvas) {
       let g = bots.get(e.id);
       if (!g) { g = makeBot(e); bots.set(e.id, g); }
       g.visible = e.state === 'ALIVE';
-      if (!g.visible) continue;
       const u = g.userData;
+      if (!g.visible) { if (u.shadow) u.shadow.visible = false; continue; }
       g.position.set(e.x, e.z, e.y);
       g.rotation.y = Math.atan2(e.aimX, e.aimY);
 
@@ -1391,12 +1489,19 @@ function createRenderer3D(canvas) {
       if (md > 0.05 && e.grounded) u.phase += md * 0.22; else u.phase *= 0.9;
       const sw = Math.sin(u.phase) * 0.65;
       u.legs[0].rotation.x = sw; u.legs[1].rotation.x = -sw;
-      u.arms[0].rotation.x = -sw * 0.6; u.arms[1].rotation.x = sw * 0.6;
-      if (!e.grounded) { u.legs[0].rotation.x = 0.5; u.legs[1].rotation.x = -0.3; } // ジャンプポーズ
+      u.arms[0].rotation.x = -1.0 - sw * 0.25; u.arms[1].rotation.x = -1.0 + sw * 0.25;
+      if (!e.grounded) { u.legs[0].rotation.x = 0.55; u.legs[1].rotation.x = -0.35; } // ジャンプポーズ
 
       // インクタンク残量
       u.ink.scale.y = Math.max(0.06, e.ink / 100);
-      u.ink.position.y = 18 - (1 - u.ink.scale.y) * 6;
+      u.ink.position.y = 22 - (1 - u.ink.scale.y) * 6;
+
+      // 落ち影（地面の高さに置き、滞空中は小さく）
+      const gH = state.grid.levelAt(e.x, e.y) * PLT_H;
+      u.shadow.visible = true;
+      u.shadow.position.set(e.x, gH + 0.7, e.y);
+      const air = Math.min(1, Math.max(0, (e.z - gH) / 70));
+      u.shadow.scale.setScalar(1 - air * 0.45);
 
       // 潜行/人型の切り替え
       const swimOwn = e.swimming && e.grounded && state.grid.valueAt(e.x, e.y) === e.team;
@@ -1424,7 +1529,7 @@ function createRenderer3D(canvas) {
     marker.visible = p.state === 'ALIVE';
     const fx = Math.sin(yaw), fz = Math.cos(yaw);
     camera.position.set(p.x - fx * CAM_DIST, p.z + CAM_HEIGHT, p.y - fz * CAM_DIST);
-    camera.lookAt(p.x + fx * CAM_LOOK_AHEAD, p.z, p.y + fz * CAM_LOOK_AHEAD);
+    camera.lookAt(p.x + fx * CAM_LOOK_AHEAD, p.z + CAM_LOOK_UP, p.y + fz * CAM_LOOK_AHEAD);
 
     renderer.render(scene, camera);
   }

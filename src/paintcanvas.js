@@ -1,10 +1,14 @@
 // 床塗りテクスチャ: PaintGrid → 2D Canvas（ADR-007: THREE.CanvasTextureの元絵）
 import { CONFIG } from './core/config.js';
 
+// 参考画像分析(2026-06-12): 本物は「明るい無彩色の地面 × 超高彩度インク」。
+// インクは縁が濃く・中央が明るい立体的なしぶき。
 const COLORS = {
-  floor: '#3a3a46',
+  floor: '#cdcac0',          // 明るいコンクリート
+  floorLine: 'rgba(0,0,0,.07)',
   ink: { 1: CONFIG.BRANDING.TEAM_COLORS[1], 2: CONFIG.BRANDING.TEAM_COLORS[2] },
-  inkDark: { 1: '#cc5212', 2: '#00937f' },
+  inkDark: { 1: '#b34400', 2: '#007a6c' },   // 縁（濃）
+  inkLight: { 1: '#ff852f', 2: '#1ed3bd' },  // ハイライト（彩度維持で少しだけ明）
 };
 
 export function createPaintCanvas() {
@@ -15,10 +19,10 @@ export function createPaintCanvas() {
   function reset(state) {
     ctx.fillStyle = COLORS.floor;
     ctx.fillRect(0, 0, canvas.width, canvas.height);
-    // 床のうっすらグリッド模様（視認性向上）
-    ctx.strokeStyle = 'rgba(255,255,255,.04)'; ctx.lineWidth = 1;
-    for (let x = 0; x <= canvas.width; x += 64) { ctx.beginPath(); ctx.moveTo(x, 0); ctx.lineTo(x, canvas.height); ctx.stroke(); }
-    for (let y = 0; y <= canvas.height; y += 64) { ctx.beginPath(); ctx.moveTo(0, y); ctx.lineTo(canvas.width, y); ctx.stroke(); }
+    // コンクリートのタイル目地
+    ctx.strokeStyle = COLORS.floorLine; ctx.lineWidth = 2;
+    for (let x = 0; x <= canvas.width; x += 80) { ctx.beginPath(); ctx.moveTo(x, 0); ctx.lineTo(x, canvas.height); ctx.stroke(); }
+    for (let y = 0; y <= canvas.height; y += 80) { ctx.beginPath(); ctx.moveTo(0, y); ctx.lineTo(canvas.width, y); ctx.stroke(); }
     const g = state.grid;
     for (let i = 0; i < g.cells.length; i++) {
       const v = g.cells[i];
@@ -28,15 +32,23 @@ export function createPaintCanvas() {
   }
 
   function paintCell(g, idx, v) {
-    // v3: 矩形でなく重なり合う円で「インクのしぶき」感を出す（座標ハッシュで決定論）
+    // v3.1: 縁が濃く中央が明るい立体的なしぶき（座標ハッシュで決定論）
     const cx = idx % g.cols, cy = (idx / g.cols) | 0;
     const h = ((cx * 73856093) ^ (cy * 19349663)) >>> 0;
     const px = cx * g.cell + g.cell / 2 + ((h & 3) - 1.5);
     const py = cy * g.cell + g.cell / 2 + (((h >> 2) & 3) - 1.5);
-    ctx.fillStyle = (h & 7) < 2 ? COLORS.inkDark[v] : COLORS.ink[v];
-    ctx.beginPath();
-    ctx.arc(px, py, g.cell * 0.78, 0, Math.PI * 2);
-    ctx.fill();
+    const r = g.cell * (0.72 + ((h >> 4) & 3) * 0.06);
+    // 縁（濃色をひと回り大きく）
+    ctx.fillStyle = COLORS.inkDark[v];
+    ctx.beginPath(); ctx.arc(px, py, r + 1.6, 0, Math.PI * 2); ctx.fill();
+    // 本体
+    ctx.fillStyle = COLORS.ink[v];
+    ctx.beginPath(); ctx.arc(px, py, r, 0, Math.PI * 2); ctx.fill();
+    // ハイライト（控えめに・左上寄り）
+    if ((h & 15) < 3) {
+      ctx.fillStyle = COLORS.inkLight[v];
+      ctx.beginPath(); ctx.arc(px - r * 0.3, py - r * 0.3, r * 0.3, 0, Math.PI * 2); ctx.fill();
+    }
   }
 
   // 差分反映。塗り更新があれば true（→ texture.needsUpdate）
