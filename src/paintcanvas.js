@@ -11,18 +11,35 @@ const COLORS = {
   inkLight: { 1: '#ff852f', 2: '#1ed3bd' },  // ハイライト（彩度維持で少しだけ明）
 };
 
+const SCALE = 2; // v3.2: テクスチャ2倍解像度（しぶきの輪郭がくっきり）
+
 export function createPaintCanvas() {
   const canvas = document.createElement('canvas');
-  canvas.width = CONFIG.WORLD.W; canvas.height = CONFIG.WORLD.H;
+  canvas.width = CONFIG.WORLD.W * SCALE; canvas.height = CONFIG.WORLD.H * SCALE;
   const ctx = canvas.getContext('2d');
+  ctx.scale(SCALE, SCALE); // 以降の描画コードは論理座標のまま
 
   function reset(state) {
+    const W = CONFIG.WORLD.W, H = CONFIG.WORLD.H;
     ctx.fillStyle = COLORS.floor;
-    ctx.fillRect(0, 0, canvas.width, canvas.height);
+    ctx.fillRect(0, 0, W, H);
     // コンクリートのタイル目地
     ctx.strokeStyle = COLORS.floorLine; ctx.lineWidth = 2;
-    for (let x = 0; x <= canvas.width; x += 80) { ctx.beginPath(); ctx.moveTo(x, 0); ctx.lineTo(x, canvas.height); ctx.stroke(); }
-    for (let y = 0; y <= canvas.height; y += 80) { ctx.beginPath(); ctx.moveTo(0, y); ctx.lineTo(canvas.width, y); ctx.stroke(); }
+    for (let x = 0; x <= W; x += 80) { ctx.beginPath(); ctx.moveTo(x, 0); ctx.lineTo(x, H); ctx.stroke(); }
+    for (let y = 0; y <= H; y += 80) { ctx.beginPath(); ctx.moveTo(0, y); ctx.lineTo(W, y); ctx.stroke(); }
+    // コンクリートの粒（決定論ハッシュ）
+    for (let i = 0; i < 900; i++) {
+      const h = (i * 2654435761) >>> 0;
+      ctx.fillStyle = (h & 1) ? 'rgba(0,0,0,.05)' : 'rgba(255,255,255,.07)';
+      ctx.fillRect((h % W), ((h >> 11) % H), 2.2, 2.2);
+    }
+    // スポーンエリアのチームカラーリング
+    for (const [team, sx] of [[1, 70], [2, W - 70]]) {
+      ctx.strokeStyle = COLORS.ink[team]; ctx.lineWidth = 7;
+      ctx.beginPath(); ctx.arc(sx, 360, 62, 0, Math.PI * 2); ctx.stroke();
+      ctx.strokeStyle = COLORS.inkDark[team]; ctx.lineWidth = 2.5;
+      ctx.beginPath(); ctx.arc(sx, 360, 70, 0, Math.PI * 2); ctx.stroke();
+    }
     const g = state.grid;
     for (let i = 0; i < g.cells.length; i++) {
       const v = g.cells[i];

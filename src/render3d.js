@@ -17,8 +17,40 @@ export function createRenderer3D(canvas) {
   renderer.setPixelRatio(Math.min(2, devicePixelRatio || 1));
 
   const scene = new THREE.Scene();
-  scene.background = new THREE.Color(0x87c8ee); // 昼の青空
-  scene.fog = new THREE.Fog(0xb8dcef, 900, 2400);
+  scene.background = new THREE.Color(0x87c8ee);
+  scene.fog = new THREE.Fog(0xc4e2f2, 1000, 2600);
+
+  // v3.2: グラデーションの空ドーム
+  const skyCanvas = document.createElement('canvas');
+  skyCanvas.width = 16; skyCanvas.height = 256;
+  const skyCtx = skyCanvas.getContext('2d');
+  const skyGrad = skyCtx.createLinearGradient(0, 0, 0, 256);
+  skyGrad.addColorStop(0, '#2f86d6');   // 天頂: 濃い青
+  skyGrad.addColorStop(0.55, '#8ecdf0');
+  skyGrad.addColorStop(1, '#e8f4f8');   // 地平線: 白っぽく
+  skyCtx.fillStyle = skyGrad; skyCtx.fillRect(0, 0, 16, 256);
+  const sky = new THREE.Mesh(
+    new THREE.SphereGeometry(2600, 20, 14),
+    new THREE.MeshBasicMaterial({ map: new THREE.CanvasTexture(skyCanvas), side: THREE.BackSide, fog: false }),
+  );
+  sky.position.set(FIELD_W / 2, 0, FIELD_H / 2);
+  scene.add(sky);
+
+  // 雲（白い塊をいくつか）
+  const cloudMat = new THREE.MeshLambertMaterial({ color: 0xffffff, fog: false });
+  const cloudSpots = [[-400, 520, -700, 1.6], [500, 620, -900, 2.2], [1400, 560, -750, 1.4], [200, 580, 1500, 1.9], [1700, 640, 1300, 1.5]];
+  for (const [cx, cy, cz, s] of cloudSpots) {
+    const cl = new THREE.Group();
+    for (const [ox, oy, oz, r] of [[0, 0, 0, 60], [70, 10, 10, 44], [-65, 6, -8, 48], [20, 28, -4, 38]]) {
+      const m = new THREE.Mesh(new THREE.SphereGeometry(r, 10, 8), cloudMat);
+      m.position.set(ox, oy, oz);
+      m.scale.y = 0.55;
+      cl.add(m);
+    }
+    cl.position.set(cx, cy, cz);
+    cl.scale.setScalar(s);
+    scene.add(cl);
+  }
 
   const camera = new THREE.PerspectiveCamera(66, 16 / 9, 1, 4000);
   const clock = new THREE.Clock();
@@ -142,14 +174,25 @@ export function createRenderer3D(canvas) {
     shooter: [3.2, 3.2, 13], roller: [9, 6, 8], charger: [2.2, 2.2, 22],
     slosher: [7, 5, 7], spinner: [5.5, 5.5, 11], blaster: [4.5, 4.5, 10],
   };
+  // v3.2: キャラはトゥーン調＋主要パーツに輪郭線（インバーテッドハル）
+  const outlineMat = new THREE.MeshBasicMaterial({ color: 0x20202a, side: THREE.BackSide });
+  function addOutline(mesh, parent, scale = 1.07) {
+    const o = new THREE.Mesh(mesh.geometry, outlineMat);
+    o.position.copy(mesh.position);
+    o.rotation.copy(mesh.rotation);
+    o.scale.setScalar(scale);
+    parent.add(o);
+    return o;
+  }
+
   function makeBot(e) {
     // 参考画像準拠の頭身バランス: 大きな頭・小さな体・両手持ち武器・カラフルな服
     const g = new THREE.Group();
-    const col = new THREE.MeshLambertMaterial({ color: TEAM_HEX[e.team] });
-    const dark = new THREE.MeshLambertMaterial({ color: TEAM_DARK[e.team] });
-    const skin = new THREE.MeshLambertMaterial({ color: 0xf6dfc4 });
-    const shirt = new THREE.MeshLambertMaterial({ color: 0xf2f2ee });
-    const shorts = new THREE.MeshLambertMaterial({ color: 0x33333d });
+    const col = new THREE.MeshToonMaterial({ color: TEAM_HEX[e.team] });
+    const dark = new THREE.MeshToonMaterial({ color: TEAM_DARK[e.team] });
+    const skin = new THREE.MeshToonMaterial({ color: 0xf6dfc4 });
+    const shirt = new THREE.MeshToonMaterial({ color: 0xf2f2ee });
+    const shorts = new THREE.MeshToonMaterial({ color: 0x33333d });
 
     const legs = [];
     for (const s of [-1, 1]) {
@@ -167,11 +210,13 @@ export function createRenderer3D(canvas) {
     const body = new THREE.Mesh(new THREE.BoxGeometry(10.5, 9, 6.5), shirt);
     body.position.y = 20;
     g.add(body);
+    const bodyOutline = addOutline(body, g, 1.09);
 
-    // 大きな頭＋顔
+    // 大きな頭＋顔（頭・キャップ・胴に輪郭線）
     const head = new THREE.Mesh(new THREE.SphereGeometry(8.2, 18, 14), skin);
     head.position.y = 33;
     g.add(head);
+    const headOutline = addOutline(head, g, 1.06);
     const eyes = [];
     for (const s of [-1, 1]) {
       const white = new THREE.Mesh(new THREE.SphereGeometry(2.3, 8, 8), new THREE.MeshBasicMaterial({ color: 0xffffff }));
@@ -185,6 +230,7 @@ export function createRenderer3D(canvas) {
     const cap = new THREE.Mesh(new THREE.SphereGeometry(8.5, 14, 8, 0, Math.PI * 2, 0, Math.PI / 2.3), col);
     cap.position.y = 34.4;
     g.add(cap);
+    const capOutline = addOutline(cap, g, 1.06);
     const brim = new THREE.Mesh(new THREE.BoxGeometry(8.5, 1.4, 5.5), dark);
     brim.position.set(0, 36.4, 8.6);
     g.add(brim);
@@ -234,7 +280,7 @@ export function createRenderer3D(canvas) {
     swim.add(ripple);
     g.add(swim);
 
-    const humanoid = [legs[0], legs[1], hip, body, head, cap, brim, gun, gunTip, tank, ...arms, ...eyes];
+    const humanoid = [legs[0], legs[1], hip, body, head, cap, brim, gun, gunTip, tank, ...arms, ...eyes, headOutline, capOutline, bodyOutline];
     g.userData = { legs, arms, body, ink, swim, shadow, humanoid, lastX: e.x, lastY: e.y, phase: 0 };
     scene.add(g);
     return g;
@@ -365,6 +411,9 @@ export function createRenderer3D(canvas) {
       m.visible = true;
       m.material = bulletMats[b.team];
       m.position.set(b.x, Math.max(2, b.h), b.y);
+      // v3.2: 進行方向に伸びるインク弾（しずく感）
+      m.rotation.y = Math.atan2(b.vx, b.vy);
+      m.scale.set(1, 1, 1.9);
     }
     for (; bi < bulletPool.length; bi++) bulletPool[bi].visible = false;
 

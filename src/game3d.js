@@ -50,6 +50,12 @@ function setup() {
 }
 
 function startMatch() {
+  // v3.2: 横画面基本 — 全画面化＋横向きロックを試行（非対応端末は#rotateオーバーレイが誘導）
+  try {
+    const el = document.documentElement;
+    const fs = el.requestFullscreen?.() || el.webkitRequestFullscreen?.();
+    Promise.resolve(fs).then(() => screen.orientation?.lock?.('landscape')).catch(() => {});
+  } catch { /* iOS Safari等は#rotateで誘導 */ }
   state = createMatch({
     seed: (Date.now() % 2147483647) | 1,
     playerWeapon: selectedWeapon,

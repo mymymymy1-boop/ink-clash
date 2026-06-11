@@ -56,7 +56,8 @@
   #ratio-pcts { width: 100%; display: flex; justify-content: space-between; font-size: 12px; font-weight: 800;
     text-shadow: 0 1px 3px #000c, 0 0 6px #0008; }
   #ratio-a-pct { color: var(--a); } #ratio-b-pct { color: var(--b); }
-  #hud-bl { position: absolute; left: max(14px, env(safe-area-inset-left)); top: max(10px, env(safe-area-inset-top)); width: 130px; }
+  #hud-bl { position: absolute; left: max(14px, env(safe-area-inset-left)); top: max(10px, env(safe-area-inset-top)); width: 132px;
+    background: rgba(12,12,22,.38); border-radius: 10px; padding: 8px 10px; backdrop-filter: blur(4px); }
   .bar-label { font-size: 9px; opacity: .8; margin-bottom: 2px; letter-spacing: .1em; }
   .bar { height: 8px; background: #ffffff22; border-radius: 4px; overflow: hidden; margin-bottom: 5px; }
   .bar > div { height: 100%; transition: width .12s; }
@@ -65,6 +66,21 @@
   #respawn { position: fixed; inset: 0; display: none; align-items: center; justify-content: center;
     background: #0009; font-size: 22px; font-weight: 800; z-index: 6; }
   #respawn.on { display: flex; }
+
+  /* v3.2: 画面の品(ビネット) */
+  #vignette { position: fixed; inset: 0; pointer-events: none; z-index: 3;
+    background: radial-gradient(ellipse at center, transparent 58%, rgba(10,10,20,.22) 100%); }
+
+  /* v3.2: 横画面が基本。縦持ちのスマホには回転を促す（タッチ端末のみ） */
+  #rotate { position: fixed; inset: 0; display: none; flex-direction: column; align-items: center;
+    justify-content: center; gap: 16px; background: #101018; z-index: 99; text-align: center; }
+  #rotate .phone { font-size: 64px; animation: rot 1.6s ease-in-out infinite; }
+  @keyframes rot { 0%, 25% { transform: rotate(0deg); } 60%, 100% { transform: rotate(90deg); } }
+  #rotate .msg { font-size: 18px; font-weight: 800; }
+  #rotate .sub2 { font-size: 13px; opacity: .7; }
+  @media (orientation: portrait) and (pointer: coarse) {
+    #rotate { display: flex; }
+  }
 
   /* 画面 */
   .screen { position: fixed; inset: 0; display: none; flex-direction: column; align-items: center;
@@ -91,8 +107,15 @@
 </head>
 <body>
 <canvas id="game"></canvas>
+<div id="vignette"></div>
 <div id="touch-layer"></div>
 <div id="stick"><div id="stick-knob"></div></div>
+
+<div id="rotate">
+  <div class="phone">📱</div>
+  <div class="msg">スマホを横向きにしてください</div>
+  <div class="sub2">このゲームは横画面専用です</div>
+</div>
 
 <div id="hud" class="hidden">
   <div id="hud-top">
