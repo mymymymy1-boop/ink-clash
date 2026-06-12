@@ -15,8 +15,13 @@ const CORE = [
   'src/core/hud.js', 'src/core/match.js',
 ];
 const BUILDS = [
-  { dev: 'dev.html', out: 'classic.html', entry: 'game.js', mods: [...CORE, 'src/render.js', 'src/game.js'], vendor: null },
-  { dev: 'dev3d.html', out: 'index.html', entry: 'game3d.js', mods: [...CORE, 'src/paintcanvas.js', 'src/sound.js', 'src/render3d.js', 'src/touch.js', 'src/game3d.js'], vendor: 'vendor/three.min.js' },
+  { dev: 'dev.html', out: 'classic.html', entry: 'game.js', mods: [...CORE, 'src/render.js', 'src/game.js'], vendors: [] },
+  {
+    dev: 'dev3d.html', out: 'index.html', entry: 'game3d.js',
+    mods: [...CORE, 'src/paintcanvas.js', 'src/sound.js', 'src/render3d.js', 'src/touch.js', 'src/game3d.js'],
+    vendors: ['vendor/three.min.js', 'vendor/GLTFLoader.js', 'vendor/SkeletonUtils.js'],
+    glbEmbed: 'vendor/robot.glb', // v3.3: モデルをbase64で内蔵（file:///Pages両対応）
+  },
 ];
 
 function strip(code) {
@@ -42,15 +47,20 @@ for (const b of BUILDS) {
   checkCollisions(b.mods);
   const bundle = b.mods.map((p) => `// ===== ${p} =====\n${strip(readFileSync(join(ROOT, p), 'utf8'))}`).join('\n');
   let out = readFileSync(join(ROOT, b.dev), 'utf8');
-  if (b.vendor) {
-    const v = readFileSync(join(ROOT, b.vendor), 'utf8');
-    const tag = `<script src="./${b.vendor}"></script>`;
+  for (const vendor of b.vendors) {
+    const v = readFileSync(join(ROOT, vendor), 'utf8');
+    const tag = `<script src="./${vendor}"></script>`;
     if (!out.includes(tag)) throw new Error(`vendorタグが見つからない: ${tag}`);
     out = out.replace(tag, () => `<script>\n${v}\n</script>`);
   }
+  let embed = '';
+  if (b.glbEmbed) {
+    const b64 = readFileSync(join(ROOT, b.glbEmbed)).toString('base64');
+    embed = `<script>window.__ROBOT_B64=${JSON.stringify(b64)};</script>\n`;
+  }
   const entryTag = `<script type="module" src="./src/${b.entry}"></script>`;
   if (!out.includes(entryTag)) throw new Error(`entryタグが見つからない: ${entryTag}`);
-  out = out.replace(entryTag, () => `<script type="module">\n${bundle}\n</script>`);
+  out = out.replace(entryTag, () => `${embed}<script type="module">\n${bundle}\n</script>`);
   writeFileSync(join(ROOT, b.out), out);
   console.log(`OK: ${b.out} (${(out.length / 1024).toFixed(1)} KB)`);
 }

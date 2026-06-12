@@ -3,9 +3,10 @@ export const CONFIG = {
   WORLD: { W: 1280, H: 720 },
   GRID: { CELL: 8, COLS: 160, ROWS: 90 },
   MATCH: { DURATION: 180, TEAM_A: 1, TEAM_B: 2, TEAM_SIZE: 4 },
-  TERRAIN: { // v3: 高低差（FR-JMP/FR-LVL）
-    PLATFORM_H: 26,      // 台1段の高さ
-    WALL_H: 44,          // 壁(OBSTACLE)の高さ＝弾はこれ未満なら遮られる
+  TERRAIN: { // v3.3: 多層地形（最大10段・FR-JMP/FR-LVL）
+    PLATFORM_H: 20,      // 1段の高さ（ジャンプ頂点36.75>20で+1段ずつ登れる）
+    MAX_LEVEL: 10,
+    WALL_H: 44,          // 外周等のOBSTACLE高さ＝弾はこれ未満なら遮られる
     CLIMB_MARGIN: 6,     // この高さ差まで登り許容
   },
   JUMP: { V0: 210, GRAVITY: 600 }, // 初速210/重力600 → 頂点約36>台26で登れる

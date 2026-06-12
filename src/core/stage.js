@@ -1,4 +1,5 @@
-// ステージ定義 v3: 左右対称・壁＋高低差（FR-LVL-001）
+// ステージ定義 v4: 左右対称・多層地形（FR-LVL-001 / 最大10段）
+// 全構造物は「登れる台」。ジャンプで1段ずつ登る（壁=OBSTACLEは場内に置かない）
 import { CONFIG } from './config.js';
 
 export const SPAWNS = {
@@ -6,24 +7,30 @@ export const SPAWNS = {
   2: { x: CONFIG.WORLD.W - 70, y: 360 },
 };
 
-// 壁（OBSTACLE: 通行・弾とも遮断）
-const WALL_RECTS = [
-  [600, 250, 80, 60], [600, 410, 80, 60],          // 中央の2枚壁
-  [330, 90, 70, 70], [880, 90, 70, 70],            // 上ルートの遮蔽
-  [330, 560, 70, 70], [880, 560, 70, 70],          // 下ルートの遮蔽
-];
-
-// 台（PLATFORM: 塗れる・ジャンプで登れる高所）
+// [x, y, w, h, level] — 後勝ちで上書き（高い段を後に書く）
 const PLATFORM_RECTS = [
-  [560, 280, 160, 160],                            // 中央タワー（壁2枚の間）
-  [180, 280, 110, 160], [990, 280, 110, 160],      // 自陣前の見張り台
-  [500, 60, 280, 90], [500, 570, 280, 90],         // 上下の回廊
+  // 中央ピラミッド（3段・頂上L3=60）
+  [540, 260, 200, 200, 1],
+  [572, 292, 136, 136, 2],
+  [604, 324, 72, 72, 3],
+
+  // 自陣前の見張り台（2段）
+  [170, 270, 120, 180, 1], [196, 308, 68, 104, 2],
+  [990, 270, 120, 180, 1], [1016, 308, 68, 104, 2],
+
+  // 下の回廊（L1）と上り口
+  [480, 560, 320, 100, 1],
+
+  // ★大階段タワー（北側・L1→L10=200、頂上から全マップを見渡せる）
+  [380, 40, 52, 110, 1], [432, 40, 52, 110, 2], [484, 40, 52, 110, 3],
+  [536, 40, 52, 110, 4], [588, 40, 52, 110, 5], [640, 40, 52, 110, 6],
+  [692, 40, 52, 110, 7], [744, 40, 52, 110, 8], [796, 40, 52, 110, 9],
+  [848, 40, 104, 110, 10],
 ];
 
 export function applyStage(grid) {
-  for (const [x, y, w, h] of WALL_RECTS) grid.setObstacleRect(x, y, w, h);
-  for (const [x, y, w, h] of PLATFORM_RECTS) grid.setPlatformRect(x, y, w, h, 1);
+  for (const [x, y, w, h, level] of PLATFORM_RECTS) grid.setPlatformRect(x, y, w, h, level);
 }
 
-export function obstacleRects() { return WALL_RECTS.map((r) => [...r]); }
+export function obstacleRects() { return []; } // v4: 場内に登れない壁は無し
 export function platformRects() { return PLATFORM_RECTS.map((r) => [...r]); }

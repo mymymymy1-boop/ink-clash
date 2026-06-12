@@ -35,7 +35,7 @@ export function createControls(area, els) {
         state.sx = dx / STICK_MAX; state.sy = dy / STICK_MAX;
         els.stickKnob.style.transform = `translate(${dx}px, ${dy}px)`;
       } else if (t.identifier === state.camId) {
-        state.yawDelta += (t.clientX - state.lastX) * 0.0085;
+        state.yawDelta -= (t.clientX - state.lastX) * 0.0085; // スワイプ右=右を向く（v3.3）
         state.lastX = t.clientX;
       }
     }
@@ -70,7 +70,7 @@ export function createControls(area, els) {
   area.addEventListener('mousedown', (ev) => { if (ev.button === 0) { state.mouseDrag = true; state.lastX = ev.clientX; } });
   addEventListener('mouseup', () => { state.mouseDrag = false; });
   addEventListener('mousemove', (ev) => {
-    if (state.mouseDrag) { state.yawDelta += (ev.clientX - state.lastX) * 0.006; state.lastX = ev.clientX; }
+    if (state.mouseDrag) { state.yawDelta -= (ev.clientX - state.lastX) * 0.006; state.lastX = ev.clientX; }
   });
 
   // 消費型: カメラ旋回量を取り出す
@@ -84,7 +84,7 @@ export function createControls(area, els) {
       sy += (state.keys.has('KeyS') ? 1 : 0) - (state.keys.has('KeyW') ? 1 : 0);
     }
     const fx = Math.sin(yaw), fy = Math.cos(yaw);   // 前方
-    const rx = fy, ry = -fx;                         // 右方
+    const rx = -fy, ry = fx;                         // 右方 = forward×up（v3.3: 左右リバース修正）
     return {
       mx: fx * -sy + rx * sx,
       my: fy * -sy + ry * sx,

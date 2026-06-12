@@ -153,23 +153,108 @@ export function createRenderer3D(canvas) {
     scene.add(pad);
   }
 
-  // 台（上面に塗りテクスチャの該当領域を貼る＝塗りが台の上にも見える）
-  const pltSide = new THREE.MeshLambertMaterial({ color: 0xb1ada3 });
+  // 台（v4: 多層。上面に塗りテクスチャの該当領域＝塗りが台の上にも見える）
+  const pltSides = [
+    new THREE.MeshLambertMaterial({ color: 0xb1ada3 }),
+    new THREE.MeshLambertMaterial({ color: 0xa39f96 }),
+    new THREE.MeshLambertMaterial({ color: 0x969289 }),
+  ];
   const pltTexes = [];
-  for (const [x, y, w, h] of platformRects()) {
+  for (const [x, y, w, h, level = 1] of platformRects()) {
     const t2 = tex.clone();
     t2.repeat.set(w / FIELD_W, h / FIELD_H);
     t2.offset.set(x / FIELD_W, 1 - (y + h) / FIELD_H);
     pltTexes.push(t2);
     const topMat = new THREE.MeshLambertMaterial({ map: t2 });
-    const m = new THREE.Mesh(new THREE.BoxGeometry(w, PLT_H, h),
-      [pltSide, pltSide, topMat, pltSide, pltSide, pltSide]);
-    m.position.set(x + w / 2, PLT_H / 2, y + h / 2);
+    const side = pltSides[Math.min(2, (level - 1) >> 2)];
+    const ph = level * PLT_H;
+    const m = new THREE.Mesh(new THREE.BoxGeometry(w, ph, h),
+      [side, side, topMat, side, side, side]);
+    m.position.set(x + w / 2, ph / 2, y + h / 2);
     scene.add(m);
   }
 
   // ===== 人型ペイントボット =====
   const bots = new Map();
+  const mixers = new Map(); // v3.3: モデルアニメーション
+
+  // v3.3: 市販品質キャラ（RobotExpressive・CC0・リグ&アニメ済み）。失敗時は自作キャラにフォールバック
+  let robotAsset = null;
+  (function loadRobot() {
+    if (!THREE.GLTFLoader) return;
+    const loader = new THREE.GLTFLoader();
+    const onLoad = (gltf) => {
+      const box = new THREE.Box3().setFromObject(gltf.scene);
+      robotAsset = { gltf, height: box.max.y - box.min.y };
+    };
+    if (typeof window !== 'undefined' && window.__ROBOT_B64) {
+      const bin = atob(window.__ROBOT_B64);
+      const buf = new Uint8Array(bin.length);
+      for (let i = 0; i < bin.length; i++) buf[i] = bin.charCodeAt(i);
+      loader.parse(buf.buffer, '', onLoad, () => {});
+    } else {
+      loader.load('./vendor/robot.glb', onLoad, undefined, () => {});
+    }
+  })();
+
+  function makeBot(e) {
+    return (robotAsset && THREE.SkeletonUtils) ? makeRobotBot(e) : makePrimitiveBot(e);
+  }
+
+  function makeRobotBot(e) {
+    const g = new THREE.Group();
+    const model = THREE.SkeletonUtils.clone(robotAsset.gltf.scene);
+    const s = 42 / robotAsset.height;
+    model.scale.setScalar(s);
+    g.add(model);
+    // チームカラー: 本体素材を着色
+    model.traverse((m) => {
+      if (m.isMesh) {
+        m.material = m.material.clone();
+        if (m.material.name === 'Main') m.material.color.setHex(TEAM_HEX[e.team]);
+      }
+    });
+    // アニメーション（Idle/Running/Jump）
+    const mixer = new THREE.AnimationMixer(model);
+    const clips = robotAsset.gltf.animations;
+    const act = (n) => { const c = THREE.AnimationClip.findByName(clips, n); return c ? mixer.clipAction(c) : null; };
+    const actions = { idle: act('Idle'), run: act('Running'), jump: act('Jump') };
+    if (actions.jump) { actions.jump.setLoop(THREE.LoopOnce, 1); actions.jump.clampWhenFinished = true; }
+    if (actions.idle) actions.idle.play();
+    mixers.set(e.id, { mixer, actions, cur: 'idle' });
+
+    // 背中のインクタンク（残量表示はゲーム情報として維持）
+    const col = new THREE.MeshToonMaterial({ color: TEAM_HEX[e.team] });
+    const tank = new THREE.Mesh(new THREE.CylinderGeometry(3.8, 3.8, 11, 10),
+      new THREE.MeshLambertMaterial({ color: 0xdddde6, transparent: true, opacity: 0.5 }));
+    tank.position.set(0, 15, -11.5);
+    g.add(tank);
+    const ink = new THREE.Mesh(new THREE.CylinderGeometry(2.9, 2.9, 10, 10), col);
+    ink.position.set(0, 15, -11.5);
+    g.add(ink);
+
+    // 落ち影
+    const shadow = new THREE.Mesh(new THREE.CircleGeometry(11, 18),
+      new THREE.MeshBasicMaterial({ color: 0x000000, transparent: true, opacity: 0.28 }));
+    shadow.rotation.x = -Math.PI / 2;
+    scene.add(shadow);
+
+    // 潜行形態
+    const swim = new THREE.Group();
+    const disc = new THREE.Mesh(new THREE.SphereGeometry(10, 14, 8), col.clone());
+    disc.scale.y = 0.32; disc.position.y = 3.2;
+    disc.material.transparent = true; disc.material.opacity = 0.85;
+    swim.add(disc);
+    const ripple = new THREE.Mesh(new THREE.RingGeometry(11, 13.5, 22),
+      new THREE.MeshBasicMaterial({ color: TEAM_HEX[e.team], transparent: true, opacity: 0.5, side: THREE.DoubleSide }));
+    ripple.rotation.x = -Math.PI / 2; ripple.position.y = 0.7;
+    swim.add(ripple);
+    g.add(swim);
+
+    g.userData = { ink, swim, shadow, humanoid: [model, tank], lastX: e.x, lastY: e.y, phase: 0, isRobot: true, inkBaseY: 15 };
+    scene.add(g);
+    return g;
+  }
   const barrelByKind = {
     shooter: [3.2, 3.2, 13], roller: [9, 6, 8], charger: [2.2, 2.2, 22],
     slosher: [7, 5, 7], spinner: [5.5, 5.5, 11], blaster: [4.5, 4.5, 10],
@@ -185,8 +270,8 @@ export function createRenderer3D(canvas) {
     return o;
   }
 
-  function makeBot(e) {
-    // 参考画像準拠の頭身バランス: 大きな頭・小さな体・両手持ち武器・カラフルな服
+  function makePrimitiveBot(e) {
+    // フォールバック自作キャラ: 大きな頭・小さな体・両手持ち武器・カラフルな服
     const g = new THREE.Group();
     const col = new THREE.MeshToonMaterial({ color: TEAM_HEX[e.team] });
     const dark = new THREE.MeshToonMaterial({ color: TEAM_DARK[e.team] });
@@ -350,6 +435,7 @@ export function createRenderer3D(canvas) {
     for (const t2 of pltTexes) t2.needsUpdate = true;
     for (const g of bots.values()) { if (g.userData.shadow) scene.remove(g.userData.shadow); scene.remove(g); }
     bots.clear();
+    mixers.clear();
     for (const p of parts) p.mesh.visible = false;
   }
 
@@ -378,15 +464,28 @@ export function createRenderer3D(canvas) {
       // 歩行アニメ（移動量ベース）
       const md = Math.hypot(e.x - u.lastX, e.y - u.lastY);
       u.lastX = e.x; u.lastY = e.y;
-      if (md > 0.05 && e.grounded) u.phase += md * 0.22; else u.phase *= 0.9;
-      const sw = Math.sin(u.phase) * 0.65;
-      u.legs[0].rotation.x = sw; u.legs[1].rotation.x = -sw;
-      u.arms[0].rotation.x = -1.0 - sw * 0.25; u.arms[1].rotation.x = -1.0 + sw * 0.25;
-      if (!e.grounded) { u.legs[0].rotation.x = 0.55; u.legs[1].rotation.x = -0.35; } // ジャンプポーズ
+      if (u.legs) { // 自作キャラ
+        if (md > 0.05 && e.grounded) u.phase += md * 0.22; else u.phase *= 0.9;
+        const sw = Math.sin(u.phase) * 0.65;
+        u.legs[0].rotation.x = sw; u.legs[1].rotation.x = -sw;
+        u.arms[0].rotation.x = -1.0 - sw * 0.25; u.arms[1].rotation.x = -1.0 + sw * 0.25;
+        if (!e.grounded) { u.legs[0].rotation.x = 0.55; u.legs[1].rotation.x = -0.35; }
+      }
+      const mx = mixers.get(e.id); // モデルキャラ: 状態でアニメ切替
+      if (mx) {
+        const want = !e.grounded ? 'jump' : md > 0.05 ? 'run' : 'idle';
+        if (want !== mx.cur && mx.actions[want]) {
+          const prev = mx.actions[mx.cur], next = mx.actions[want];
+          next.reset();
+          if (prev) next.crossFadeFrom(prev, 0.16, false);
+          next.play();
+          mx.cur = want;
+        }
+      }
 
       // インクタンク残量
       u.ink.scale.y = Math.max(0.06, e.ink / 100);
-      u.ink.position.y = 22 - (1 - u.ink.scale.y) * 6;
+      u.ink.position.y = (u.inkBaseY || 22) - (1 - u.ink.scale.y) * 5;
 
       // 落ち影（地面の高さに置き、滞空中は小さく）
       const gH = state.grid.levelAt(e.x, e.y) * PLT_H;
@@ -418,6 +517,7 @@ export function createRenderer3D(canvas) {
     for (; bi < bulletPool.length; bi++) bulletPool[bi].visible = false;
 
     updateParts(dt);
+    for (const m of mixers.values()) m.mixer.update(dt);
 
     const p = state.entities.find((e) => e.id === playerId) || state.entities[0];
     marker.position.set(p.x, p.z + 0.6, p.y);
