@@ -8,7 +8,7 @@ import { applyStage, getSpawns } from './stage.js';
 import { createBotMemory, botThink } from './bots.js';
 import { mulberry32 } from './rng.js';
 
-const BOT_WEAPONS = ['shooter', 'roller', 'charger', 'slosher', 'spinner', 'blaster']; // v3: 6種
+const BOT_WEAPONS = ['shooter', 'roller', 'charger', 'slosher', 'spinner', 'blaster', 'brush', 'dualies', 'stringer']; // v7: 9種
 
 export function createMatch({ seed = 1, playerWeapon = 'shooter', difficulty = CONFIG.BOT.DEFAULT, playerAuto = false } = {}) {
   const g = CONFIG.GRID;

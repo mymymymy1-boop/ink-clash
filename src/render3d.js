@@ -284,6 +284,7 @@ export function createRenderer3D(canvas) {
   const barrelByKind = {
     shooter: [3.2, 3.2, 13], roller: [9, 6, 8], charger: [2.2, 2.2, 22],
     slosher: [7, 5, 7], spinner: [5.5, 5.5, 11], blaster: [4.5, 4.5, 10],
+    brush: [6, 3, 9], dualies: [2.8, 2.8, 10], stringer: [3, 5.5, 16], // v7
   };
   // v3.2: キャラはトゥーン調＋主要パーツに輪郭線（インバーテッドハル）
   const outlineMat = new THREE.MeshBasicMaterial({ color: 0x20202a, side: THREE.BackSide });

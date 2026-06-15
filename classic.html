@@ -178,6 +178,23 @@ const CONFIG = {
       interval: 0.7, dmg: 100, splashDmg: 50, splashR: 55,
       range: 230, inkCost: 10, bulletSpeed: 480, paintR: 26, dropletEvery: 90,
     },
+    brush: { // v7 FR-WPN-007: 超高速・短射程・広塗り（接近塗り特化）
+      kind: 'shooter', name: 'スピードブラッシュ',
+      interval: 0.05, dmg: 18, range: 150, inkCost: 0.6,
+      bulletSpeed: 520, paintR: 22, dropletEvery: 30,
+    },
+    dualies: { // v7 FR-WPN-008: 二丁拳銃・2発同時の扇射・中射程
+      kind: 'shooter', name: 'デュアルマニューバー',
+      interval: 0.11, dmg: 28, range: 240, inkCost: 1.4, pellets: 2, spread: 0.12,
+      bulletSpeed: 620, paintR: 16, dropletEvery: 50,
+    },
+    stringer: { // v7 FR-WPN-009: チャージして3本同時発射（縦塗りの面制圧）
+      kind: 'charger', name: 'トライストリンガー',
+      chargeTime: 0.8, fullDmg: 60, partialDmg: 28,
+      maxRange: 420, rangeBase: 0.45, pellets: 3, spread: 0.22,
+      inkCostFull: 14, chargeSpeedMult: 0.7,
+      bulletSpeed: 900, paintR: 14, dropletEvery: 36,
+    },
   },
   BOT: { // FR-BOT-001/002 (REV-R1-006/102)
     DIFFICULTIES: {
@@ -619,7 +636,8 @@ function fireSimple(e, def, input, state, vz0) {
   e.ink -= def.inkCost;
   e.cooldown = def.interval;
   // ブラスターは直進して射程端で爆発（重力なし）。シューター/スロッシャーは自然落下
-  spawnBullet(state, e, def, vz0, def.kind !== 'blaster');
+  // v7: pellets指定があれば扇状に複数発（デュアル等）
+  spawnSpread(state, e, def, vz0, def.kind !== 'blaster');
   emit(state, def.kind === 'blaster' ? 'shoot_heavy' : 'shoot', e.x, e.y, e.team);
 }
 
@@ -679,21 +697,33 @@ function updateCharger(e, def, input, state, dt) {
   e.ink -= cost;
   const range = def.maxRange * (def.rangeBase + (1 - def.rangeBase) * c); // FR-WPN-003
   const dmg = c >= 1 ? def.fullDmg : def.partialDmg;
-  spawnBullet(state, e, { ...def, dmg, range }, 0, false); // 無重力レーザー
+  // v7: pellets指定があれば扇状（ストリンガー=3本同時）。無重力レーザー
+  spawnSpread(state, e, { ...def, dmg, range }, 0, false);
   emit(state, 'laser', e.x, e.y, e.team);
 }
 
-function spawnBullet(state, e, def, vz0, gravity) {
+function spawnBullet(state, e, def, vz0, gravity, aimX = e.aimX, aimY = e.aimY) {
   state.bullets.push({
     team: e.team, ownerId: e.id, kind: def.kind,
-    x: e.x + e.aimX * (CONFIG.PLAYER.RADIUS + 2),
-    y: e.y + e.aimY * (CONFIG.PLAYER.RADIUS + 2),
-    vx: e.aimX * def.bulletSpeed, vy: e.aimY * def.bulletSpeed,
+    x: e.x + aimX * (CONFIG.PLAYER.RADIUS + 2),
+    y: e.y + aimY * (CONFIG.PLAYER.RADIUS + 2),
+    vx: aimX * def.bulletSpeed, vy: aimY * def.bulletSpeed,
     h: e.z + MUZZLE_H, vz: vz0, gravity,
     dmg: def.dmg, paintR: def.paintR, range: def.range,
     splashDmg: def.splashDmg || 0, splashR: def.splashR || 0,
     traveled: 0, dropletAcc: 0, dropletEvery: def.dropletEvery,
   });
+}
+
+// v7: 複数弾を扇状に発射（pellets/spread対応。pellets=1なら単発と同一挙動）
+function spawnSpread(state, e, def, vz0, gravity) {
+  const pellets = def.pellets || 1;
+  const spread = def.spread || 0;
+  for (let i = 0; i < pellets; i++) {
+    const off = pellets > 1 ? (i / (pellets - 1) - 0.5) * spread : 0;
+    const ca = Math.cos(off), sa = Math.sin(off);
+    spawnBullet(state, e, def, vz0, gravity, e.aimX * ca - e.aimY * sa, e.aimX * sa + e.aimY * ca);
+  }
 }
 
 // 弾の前進・衝突・着弾（v3: 高さ対応）。C-008: 遮蔽物で消滅・塗りなし
@@ -964,7 +994,7 @@ function hudModel(state, playerId = 'A1') {
 
 
 
-const BOT_WEAPONS = ['shooter', 'roller', 'charger', 'slosher', 'spinner', 'blaster']; // v3: 6種
+const BOT_WEAPONS = ['shooter', 'roller', 'charger', 'slosher', 'spinner', 'blaster', 'brush', 'dualies', 'stringer']; // v7: 9種
 
 function createMatch({ seed = 1, playerWeapon = 'shooter', difficulty = CONFIG.BOT.DEFAULT, playerAuto = false } = {}) {
   const g = CONFIG.GRID;

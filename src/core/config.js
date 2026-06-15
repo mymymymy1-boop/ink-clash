@@ -61,6 +61,23 @@ export const CONFIG = {
       interval: 0.7, dmg: 100, splashDmg: 50, splashR: 55,
       range: 230, inkCost: 10, bulletSpeed: 480, paintR: 26, dropletEvery: 90,
     },
+    brush: { // v7 FR-WPN-007: 超高速・短射程・広塗り（接近塗り特化）
+      kind: 'shooter', name: 'スピードブラッシュ',
+      interval: 0.05, dmg: 18, range: 150, inkCost: 0.6,
+      bulletSpeed: 520, paintR: 22, dropletEvery: 30,
+    },
+    dualies: { // v7 FR-WPN-008: 二丁拳銃・2発同時の扇射・中射程
+      kind: 'shooter', name: 'デュアルマニューバー',
+      interval: 0.11, dmg: 28, range: 240, inkCost: 1.4, pellets: 2, spread: 0.12,
+      bulletSpeed: 620, paintR: 16, dropletEvery: 50,
+    },
+    stringer: { // v7 FR-WPN-009: チャージして3本同時発射（縦塗りの面制圧）
+      kind: 'charger', name: 'トライストリンガー',
+      chargeTime: 0.8, fullDmg: 60, partialDmg: 28,
+      maxRange: 420, rangeBase: 0.45, pellets: 3, spread: 0.22,
+      inkCostFull: 14, chargeSpeedMult: 0.7,
+      bulletSpeed: 900, paintR: 14, dropletEvery: 36,
+    },
   },
   BOT: { // FR-BOT-001/002 (REV-R1-006/102)
     DIFFICULTIES: {
