@@ -16,6 +16,7 @@ let sound = null;
 let yaw = Math.PI / 2; // 初期: フィールド中央（+x方向）を向く
 let selectedWeapon = 'shooter';
 let selectedSpecial = 'storm'; // v2: スペシャル選択
+let selectedDifficulty = 'NORMAL'; // v6: 難易度選択
 
 function setup() {
   const canvas = $('game');
@@ -55,6 +56,14 @@ function setup() {
     });
   }
   document.querySelector('[data-special="storm"]').click();
+  for (const btn of document.querySelectorAll('[data-diff]')) {
+    btn.addEventListener('click', () => {
+      selectedDifficulty = btn.dataset.diff;
+      for (const b of document.querySelectorAll('[data-diff]')) b.style.borderColor = '#444';
+      btn.style.borderColor = '#ff6b1a';
+    });
+  }
+  document.querySelector('[data-diff="NORMAL"]').click();
   $('start').addEventListener('click', startMatch);
   $('rematch').addEventListener('click', () => show('title'));
 
@@ -76,7 +85,7 @@ function startMatch() {
   state = createMatch({
     seed: (Date.now() % 2147483647) | 1,
     playerWeapon: selectedWeapon,
-    difficulty: CONFIG.BOT.DEFAULT,
+    difficulty: selectedDifficulty,
   });
   // v2: プレイヤー (A1) のスペシャルタイプを設定
   const player = state.entities.find(e => e.id === 'A1');
