@@ -176,3 +176,23 @@ test('TC-FR-PAD-001: ジャンプ台に接地すると通常ジャンプより�
   assert.equal(p.vz, CONFIG.JUMP.PAD_V0); // 打ち上げ初速
   assert.ok(CONFIG.JUMP.PAD_V0 > CONFIG.JUMP.V0); // 通常ジャンプより強い
 });
+
+// v12: ゲームパッドのボタンマッピング（Switch/Xboxの差を吸収）
+test('TC-FR-PAD-002: Switchはボタン物理入替を吸収し、Xboxは標準どおり割り当てる', async () => {
+  const { mapGamepad } = await import('../../src/touch.js');
+  const mk = (id, pressed = [], axes = [0, 0, 0, 0]) => ({
+    id, axes, buttons: Array.from({ length: 18 }, (_, i) => ({ pressed: pressed.includes(i) })),
+  });
+  // Switch: 下(0)・右(1)どちらでもジャンプ、左(2)・上(3)どちらでもスペシャル
+  assert.equal(mapGamepad(mk('Pro Controller', [1])).jump, true);
+  assert.equal(mapGamepad(mk('Nintendo Switch Pro Controller', [0])).jump, true);
+  assert.equal(mapGamepad(mk('Joy-Con (L/R)', [2])).special, true);
+  assert.equal(mapGamepad(mk('Pro Controller', [3])).special, true);
+  // Xbox: A(0)のみジャンプ・B(1)はジャンプにしない / Y(3)のみスペシャル
+  assert.equal(mapGamepad(mk('Xbox Wireless Controller', [0])).jump, true);
+  assert.equal(mapGamepad(mk('Xbox Wireless Controller', [1])).jump, false);
+  // 共通: R/ZR(5,7)=射撃、L/ZL(4,6)=潜行、LStickはデッドゾーン適用
+  assert.equal(mapGamepad(mk('x', [7])).fire, true);
+  assert.equal(mapGamepad(mk('x', [6])).swim, true);
+  assert.equal(mapGamepad(mk('x', [], [0.1, 0, 0, 0])).lx, 0); // デッドゾーン
+});

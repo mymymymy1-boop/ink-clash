@@ -177,7 +177,8 @@
   <div id="controls-hint">
     【スマホ】左半分: スティックで移動 ／ 右半分: スワイプで視点旋回 ／ ボタンで ショット・ジャンプ・潜行・SP<br>
     【PC】マウス移動で旋回 ／ 左クリック長押しで前進 ／ 右クリックで潜行 ／ ホイールクリックでSP<br>
-    　　　<b>Space＝ショット</b> ／ <b>Enter＝ジャンプ</b>（マウス＋Space＋Enterだけで遊べます）
+    　　　<b>Space＝ショット</b> ／ <b>Enter＝ジャンプ</b>（マウス＋Space＋Enterだけで遊べます）<br>
+    【コントローラー】Xbox・PS・Switch Pro・Joy-Con対応 ／ Lスティック移動・Rスティック視点・R射撃・L潜行
   </div>
 </div>
 
@@ -6152,7 +6153,8 @@ function createRenderer3D(canvas) {
 // スマホタッチ操作（FR-TOUCH-001/002）+ PCマウス操作（v11）+ Gamepad API（v2）
 // 【スマホ】左半面: 仮想スティック（移動）/ 右半面ドラッグ: カメラ旋回 / DOMボタン: 射撃・潜行・SP
 // 【PC】マウス移動=旋回 / 左クリック=前進 / 右クリック=潜行 / ホイールクリック=SP / Space=ショット / Enter=ジャンプ
-// 【Gamepad】LStick=移動 / RStick=カメラ / LT/RT=潜行/射撃 / A=ジャンプ / Y=SP
+// 【Gamepad】LStick=移動 / RStick=カメラ / L/ZL=潜行 / R/ZR=射撃 / 下右=ジャンプ / 左上=SP
+//   Xbox/PS/Switch Pro・Joy-Con対応（Switchはボタン物理配置の入替を自動吸収）
 const STICK_MAX = 52;
 const GAMEPAD_DEADZONE = 0.2;
 const MOUSE_TURN_DEAD = 0.10; // 画面中央付近は旋回しない不感帯（割合）
@@ -6255,20 +6257,23 @@ function createControls(area, els) {
     return d;
   }
 
-  // Gamepad ポーリング（v2）
+  // Gamepad ポーリング（v2 / v12: Switch Pro・Joy-Con対応）
+  function firstGamepad() {
+    const pads = navigator.getGamepads?.() || [];
+    for (const g of pads) if (g) return g;
+    return null;
+  }
   function updateGamepad() {
-    const gp = navigator.getGamepads?.()?.[0];
+    const gp = firstGamepad();
     if (!gp) return;
-    const pad = (v) => (Math.abs(v) > GAMEPAD_DEADZONE ? v : 0);
-    state.gpLsx = pad(gp.axes[0]); // LStick X
-    state.gpLsy = pad(gp.axes[1]); // LStick Y
-    state.gpRx = pad(gp.axes[2]) * 0.007; // RStick X → yaw delta
-    state.yawDelta -= state.gpRx; // RStick右=右を向く（右=yaw減・タッチと統一。v11で符号修正）
-    // ボタン: LT=4, RT=5, A=0, Y=3
-    state.swim = state.swim || (gp.buttons[4]?.pressed || false);
-    state.fire = state.fire || (gp.buttons[5]?.pressed || false);
-    state.jump = state.jump || (gp.buttons[0]?.pressed || false);
-    state.special = state.special || (gp.buttons[3]?.pressed || false);
+    const g = mapGamepad(gp);
+    state.gpLsx = g.lx; state.gpLsy = g.ly;
+    state.gpRx = g.rx * 0.007;
+    state.yawDelta -= state.gpRx; // スティック右=右を向く（右=yaw減・タッチと統一）
+    state.swim = state.swim || g.swim;
+    state.fire = state.fire || g.fire;
+    state.jump = state.jump || g.jump;
+    state.special = state.special || g.special;
   }
 
   // カメラ相対の移動入力（logic 2D）。yaw前方=(sin,cos)
@@ -6305,6 +6310,26 @@ function bindButton(el, set) {
   el.addEventListener('pointerup', off);
   el.addEventListener('pointercancel', off);
   el.addEventListener('contextmenu', (ev) => ev.preventDefault());
+}
+
+// 純粋関数（DOM非依存・テスト可能）: ゲームパッド状態 → 入力。
+// Switchはフェイスボタンの物理配置がXboxと入れ替わる（A/B・X/Yが逆）ため、
+// 下/右ボタンをジャンプ、左/上ボタンをスペシャルにORして取りこぼしを防ぐ。
+// トリガー/バンパー(4/5/6/7)はいずれでも潜行(L系)・射撃(R系)に反応する。
+function mapGamepad(gp) {
+  const pad = (v) => (Math.abs(v) > GAMEPAD_DEADZONE ? v : 0);
+  const ax = (i) => pad(gp.axes[i] ?? 0);
+  const btn = (i) => !!(gp.buttons[i] && gp.buttons[i].pressed);
+  // カメラ旋回: 標準マッピングはRStick X=axes[2]。一部Switch非標準は[3]に出るため両対応
+  const rx = ax(2) || (Math.abs(gp.axes[3] ?? 0) > 0.5 ? ax(3) : 0);
+  const isSwitch = /nintendo|pro controller|joy-?con|057e/i.test(gp.id || '');
+  return {
+    lx: ax(0), ly: ax(1), rx,
+    swim: btn(4) || btn(6),   // L / ZL
+    fire: btn(5) || btn(7),   // R / ZR
+    jump: isSwitch ? (btn(0) || btn(1)) : btn(0),       // 下/右 ジャンプ
+    special: isSwitch ? (btn(2) || btn(3)) : btn(3),    // 左/上 スペシャル
+  };
 }
 
 // ===== src/game3d.js =====
