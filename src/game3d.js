@@ -109,6 +109,31 @@ function playEvents(events) {
   }
 }
 
+// v9: 緩やかなエイムアシスト（タッチ操作補助）。照準コーン内の最寄り敵へ最大~0.12rad寄せる。
+// 移動入力(mx/my)は変えず、照準(aimX/aimY)のみ補正。人間プレイヤー専用。
+function applyAimAssist(input, state) {
+  const p = state.entities.find((e) => e.id === 'A1');
+  if (!p || p.state !== 'ALIVE') return input;
+  let best = null, bestDot = Math.cos(0.26); // 約15°のコーン
+  for (const e of state.entities) {
+    if (e.team === p.team || e.state !== 'ALIVE') continue;
+    const dx = e.x - p.x, dy = e.y - p.y;
+    const d = Math.hypot(dx, dy);
+    if (d < 1 || d > 320) continue;
+    const dot = (input.aimX * dx + input.aimY * dy) / d;
+    if (dot > bestDot) { bestDot = dot; best = [dx / d, dy / d]; }
+  }
+  if (best) {
+    const cur = Math.atan2(input.aimY, input.aimX);
+    let diff = Math.atan2(best[1], best[0]) - cur;
+    while (diff > Math.PI) diff -= 2 * Math.PI;
+    while (diff < -Math.PI) diff += 2 * Math.PI;
+    const a = cur + Math.max(-0.12, Math.min(0.12, diff)) * 0.5; // 半分だけ寄せる
+    input.aimX = Math.cos(a); input.aimY = Math.sin(a);
+  }
+  return input;
+}
+
 let last = 0, acc = 0;
 function loop(t) {
   requestAnimationFrame(loop);
@@ -119,7 +144,7 @@ function loop(t) {
   if (state.phase === 'PLAY') {
     acc += elapsed;
     while (acc >= DT) {
-      tick(state, controls.getInput(yaw), DT);
+      tick(state, applyAimAssist(controls.getInput(yaw), state), DT);
       acc -= DT;
       if (state.events?.length) { renderer.addFx(state.events); playEvents(state.events); }
     }

@@ -476,12 +476,17 @@ export function createRenderer3D(canvas) {
     f.ttl = 0.09;
   }
   const FLASH_EVENTS = { shoot: 1, shoot_heavy: 1.7, laser: 1.4 };
+  // v9: インパクト時のカメラシェイク量
+  let shake = 0;
+  const SHAKE_EVENTS = { explode: 1.5, special: 2.2, splat: 1.0, shoot_heavy: 0.5 };
   function addFx(events) {
     for (const ev of events) {
       const f = FX_N[ev.type];
       if (f) spawnPart(ev.x, 6, ev.y, ev.team, f[0], f[1]);
       const fl = FLASH_EVENTS[ev.type];
       if (fl) spawnFlash(ev.x, ev.y, ev.team, fl);
+      const sk = SHAKE_EVENTS[ev.type];
+      if (sk) shake = Math.min(4, shake + sk);
     }
   }
   function updateParts(dt) {
@@ -512,6 +517,9 @@ export function createRenderer3D(canvas) {
   marker.rotation.x = -Math.PI / 2;
   scene.add(marker);
 
+  // v9: カメラ位置のスムージング状態（リセットでスナップ）
+  const camState = { x: 0, y: 0, z: 0, init: false };
+
   function reset(state) {
     paint.reset(state);
     buildStageGeometry(); // v5: 選択ステージの台・スポーンを再構築
@@ -522,6 +530,7 @@ export function createRenderer3D(canvas) {
     mixers.clear();
     for (const p of parts) p.mesh.visible = false;
     for (const f of flashes) f.mesh.visible = false;
+    camState.init = false; shake = 0; // v9: カメラをスナップし直す
   }
 
   function resize(w, h) {
@@ -613,7 +622,18 @@ export function createRenderer3D(canvas) {
     marker.position.set(p.x, p.z + 0.6, p.y);
     marker.visible = p.state === 'ALIVE';
     const fx = Math.sin(yaw), fz = Math.cos(yaw);
-    camera.position.set(p.x - fx * CAM_DIST, p.z + CAM_HEIGHT, p.y - fz * CAM_DIST);
+    // v9: 目標カメラ位置へ指数補間（フレームレート非依存）でなめらかに追従
+    const tx = p.x - fx * CAM_DIST, ty = p.z + CAM_HEIGHT, tz = p.y - fz * CAM_DIST;
+    if (!camState.init) { camState.x = tx; camState.y = ty; camState.z = tz; camState.init = true; }
+    const k = 1 - Math.pow(0.0022, dt); // 0に近いほど速く追従
+    camState.x += (tx - camState.x) * k;
+    camState.y += (ty - camState.y) * k;
+    camState.z += (tz - camState.z) * k;
+    // v9: インパクトシェイク（二乗で鋭く減衰、横揺れ主体）
+    shake = Math.max(0, shake - dt * 7);
+    const sh = shake * shake * 0.6;
+    const ox = Math.sin(clock.elapsedTime * 84) * sh, oy = Math.cos(clock.elapsedTime * 71) * sh;
+    camera.position.set(camState.x + ox, camState.y + oy, camState.z);
     camera.lookAt(p.x + fx * CAM_LOOK_AHEAD, p.z + CAM_LOOK_UP, p.y + fz * CAM_LOOK_AHEAD);
 
     renderer.render(scene, camera);
