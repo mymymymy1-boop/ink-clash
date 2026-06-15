@@ -411,30 +411,58 @@ export function createRenderer3D(canvas) {
     return bulletPool[i];
   }
 
+  // v5-fx: インク飛沫パーティクル（サイズ揺らぎ＋寿命に応じた縮小フェード）
   const parts = [];
   const partGeo = new THREE.SphereGeometry(2.6, 6, 5);
+  const PART_CAP = 160;
+  let jseed = 1;
+  const jitter = () => { jseed = (jseed * 1103515245 + 12345) & 0x7fffffff; return jseed / 0x7fffffff; }; // 視覚揺らぎ用（決定論ではない描画専用）
   function spawnPart(x, h, y, team, n, power) {
     for (let i = 0; i < n; i++) {
       let p = parts.find((q) => !q.mesh.visible);
       if (!p) {
-        p = { mesh: new THREE.Mesh(partGeo, bulletMats[1].clone()), vx: 0, vy: 0, vz: 0, ttl: 0 };
+        if (parts.length >= PART_CAP) return; // プール上限
+        p = { mesh: new THREE.Mesh(partGeo, bulletMats[1].clone()), vx: 0, vy: 0, vz: 0, ttl: 0, life: 0, sz: 1 };
         scene.add(p.mesh); parts.push(p);
-        if (parts.length > 90) { p.mesh.visible = false; return; } // プール上限
       }
-      const a = (i / n) * Math.PI * 2 + x % 1;
+      const a = (i / n) * Math.PI * 2 + jitter() * 0.9;
+      const spd = power * (0.6 + jitter() * 0.7);     // 速度を粒ごとにばらす
+      p.sz = 0.55 + jitter() * 1.1;                    // サイズ揺らぎ
       p.mesh.material.color.setHex(TEAM_HEX[team]);
       p.mesh.position.set(x, h + 4, y);
+      p.mesh.scale.setScalar(p.sz);
       p.mesh.visible = true;
-      p.vx = Math.cos(a) * power; p.vy = Math.sin(a) * power;
-      p.vz = 60 + power * 0.8;
-      p.ttl = 0.55;
+      p.vx = Math.cos(a) * spd; p.vy = Math.sin(a) * spd;
+      p.vz = 60 + power * (0.6 + jitter() * 0.7);
+      p.ttl = p.life = 0.5 + jitter() * 0.35;
     }
   }
-  const FX_N = { land: [3, 40], explode: [10, 90], splat: [12, 80], special: [8, 70], swing: [4, 55] };
+  // [個数, 勢い]。splat(撃破)は大きく派手に、landは控えめに
+  const FX_N = { land: [4, 42], explode: [14, 95], splat: [18, 90], special: [10, 75], swing: [5, 58] };
+  // v5-fx: マズルフラッシュ（発砲時に銃口で一瞬光る）
+  const flashes = [];
+  const flashGeo = new THREE.SphereGeometry(5.5, 8, 6);
+  function spawnFlash(x, y, team, size) {
+    let f = flashes.find((q) => !q.mesh.visible);
+    if (!f) {
+      if (flashes.length >= 24) return;
+      f = { mesh: new THREE.Mesh(flashGeo, new THREE.MeshBasicMaterial({ color: 0xffffff, transparent: true })), ttl: 0 };
+      scene.add(f.mesh); flashes.push(f);
+    }
+    f.mesh.material.color.setHex(TEAM_HEX[team]);
+    f.mesh.position.set(x, 18, y);
+    f.mesh.scale.setScalar(size);
+    f.mesh.material.opacity = 0.9;
+    f.mesh.visible = true;
+    f.ttl = 0.09;
+  }
+  const FLASH_EVENTS = { shoot: 1, shoot_heavy: 1.7, laser: 1.4 };
   function addFx(events) {
     for (const ev of events) {
       const f = FX_N[ev.type];
       if (f) spawnPart(ev.x, 6, ev.y, ev.team, f[0], f[1]);
+      const fl = FLASH_EVENTS[ev.type];
+      if (fl) spawnFlash(ev.x, ev.y, ev.team, fl);
     }
   }
   function updateParts(dt) {
@@ -446,6 +474,14 @@ export function createRenderer3D(canvas) {
       p.mesh.position.x += p.vx * dt;
       p.mesh.position.z += p.vy * dt;
       p.mesh.position.y = Math.max(1, p.mesh.position.y + p.vz * dt);
+      p.mesh.scale.setScalar(p.sz * Math.max(0.15, p.ttl / p.life)); // 縮小フェード
+    }
+    for (const f of flashes) {
+      if (!f.mesh.visible) continue;
+      f.ttl -= dt;
+      if (f.ttl <= 0) { f.mesh.visible = false; continue; }
+      f.mesh.scale.multiplyScalar(1 + dt * 14);   // 急速に膨らみながら
+      f.mesh.material.opacity = Math.max(0, f.ttl / 0.09 * 0.9); // 消える
     }
   }
 
@@ -466,6 +502,7 @@ export function createRenderer3D(canvas) {
     bots.clear();
     mixers.clear();
     for (const p of parts) p.mesh.visible = false;
+    for (const f of flashes) f.mesh.visible = false;
   }
 
   function resize(w, h) {
