@@ -146,6 +146,11 @@
     <button data-weapon="spinner"><span class="wname"></span><span class="wdesc">スピンアップ後に超連射</span></button>
     <button data-weapon="blaster"><span class="wname"></span><span class="wdesc">着弾爆発・範囲ダメージ</span></button>
   </div>
+  <div style="font-size: 12px; opacity: 0.8; margin-top: 8px;">スペシャル:</div>
+  <div id="specials" style="width: 100%; display: flex; gap: 8px; flex-wrap: wrap; justify-content: center;">
+    <button data-special="storm" style="padding: 6px 12px; border-radius: 8px; border: 2px solid #444; background: #23232c; color: #eee; cursor: pointer; font-size: 11px;">⚡ インクストーム</button>
+    <button data-special="barrier" style="padding: 6px 12px; border-radius: 8px; border: 2px solid #444; background: #23232c; color: #eee; cursor: pointer; font-size: 11px;">🛡️ インクバリア</button>
+  </div>
   <div id="stage-select" style="width: 100%; display: flex; gap: 8px; flex-wrap: wrap; justify-content: center; margin-top: 8px;">
     <button data-stage="1" style="padding: 8px 12px; border-radius: 8px; border: 2px solid #444; background: #23232c; color: #eee; cursor: pointer; font-size: 12px;">🏔️ Pyramid Arena</button>
     <button data-stage="2" style="padding: 8px 12px; border-radius: 8px; border: 2px solid #444; background: #23232c; color: #eee; cursor: pointer; font-size: 12px;">⛰️ Split Peaks</button>
@@ -4728,6 +4733,7 @@ function blocked(x, y, r, grid, sx, sy, z) {
 // 戻り値: ダウンさせたら true（FR-DMG-001）
 function damageEntity(e, dmg) {
   if (e.state !== 'ALIVE' || e.invulnT > 0) return false;
+  if (e.barrierEnd) dmg *= 0.5; // バリア中は半減
   e.hp -= dmg;
   if (e.hp <= 0) {
     e.hp = 0; e.state = 'SPLATTED'; e.respawnT = P.RESPAWN_TIME;
@@ -4738,11 +4744,16 @@ function damageEntity(e, dmg) {
 }
 
 // ===== src/core/special.js =====
-// スペシャル: SPゲージ＋インクストーム（FR-SP-001, C-006）
+// スペシャル: SPゲージ＋スペシャルコマンド（v2: 2種類） — FR-SP-001, C-006
 
 
 
 const S = CONFIG.SP;
+
+const SPECIALS = {
+  STORM: 'storm',   // インクストーム
+  BARRIER: 'barrier', // インクバリア
+};
 
 function addSP(e, newlyPaintedCells) {
   if (e.state !== 'ALIVE') return;
@@ -4751,13 +4762,18 @@ function addSP(e, newlyPaintedCells) {
 
 function canSpecial(e) { return e.state === 'ALIVE' && e.sp >= S.MAX; } // C-006: >=150
 
-// インクストーム: 前方帯（幅48×長さ320px）即時塗り＋帯内の敵に40dmg。発動でインク全回復・SP=0
 function trySpecial(e, state) {
   if (!canSpecial(e)) return false;
+  const specialType = e.specialType || SPECIALS.STORM;
+  if (specialType === SPECIALS.BARRIER) return tryBarrier(e, state);
+  return tryStorm(e, state);
+}
+
+// インクストーム: 前方帯（幅48×長さ320px）即時塗り＋帯内の敵に40dmg。発動でインク全回復・SP=0
+function tryStorm(e, state) {
   const { grid, entities } = state;
   const r = S.STORM_W / 2;
   for (let d = 0; d <= S.STORM_LEN; d += r) {
-    // スペシャル塗りはSP再加算しない（自己増殖防止）
     grid.paintCircle(e.x + e.aimX * d, e.y + e.aimY * d, r, e.team);
   }
   for (const t of entities) {
@@ -4766,7 +4782,15 @@ function trySpecial(e, state) {
       damageEntity(t, S.STORM_DMG);
     }
   }
-  e.ink = CONFIG.PLAYER.INK; // EV-SP-002: 発動でインク全回復
+  e.ink = CONFIG.PLAYER.INK;
+  e.sp = 0;
+  return true;
+}
+
+// インクバリア: 一時的にダメージ半減＆インク消費率2倍（8秒間）
+function tryBarrier(e, state) {
+  e.barrierEnd = state.time + 8;
+  e.ink = CONFIG.PLAYER.INK;
   e.sp = 0;
   return true;
 }
@@ -6064,6 +6088,7 @@ let controls = null;
 let sound = null;
 let yaw = Math.PI / 2; // 初期: フィールド中央（+x方向）を向く
 let selectedWeapon = 'shooter';
+let selectedSpecial = 'storm'; // v2: スペシャル選択
 
 function setup() {
   const canvas = $('game');
@@ -6095,6 +6120,14 @@ function setup() {
     });
   }
   document.querySelector('[data-stage="1"]').click();
+  for (const btn of document.querySelectorAll('[data-special]')) {
+    btn.addEventListener('click', () => {
+      selectedSpecial = btn.dataset.special;
+      for (const b of document.querySelectorAll('[data-special]')) b.style.borderColor = '#444';
+      btn.style.borderColor = '#ffd23e';
+    });
+  }
+  document.querySelector('[data-special="storm"]').click();
   $('start').addEventListener('click', startMatch);
   $('rematch').addEventListener('click', () => show('title'));
 
@@ -6118,6 +6151,9 @@ function startMatch() {
     playerWeapon: selectedWeapon,
     difficulty: CONFIG.BOT.DEFAULT,
   });
+  // v2: プレイヤー (A1) のスペシャルタイプを設定
+  const player = state.entities.find(e => e.id === 'A1');
+  if (player) player.specialType = selectedSpecial;
   yaw = Math.PI / 2;
   renderer.reset(state);
   sound.play('start');

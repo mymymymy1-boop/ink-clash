@@ -15,6 +15,7 @@ let controls = null;
 let sound = null;
 let yaw = Math.PI / 2; // 初期: フィールド中央（+x方向）を向く
 let selectedWeapon = 'shooter';
+let selectedSpecial = 'storm'; // v2: スペシャル選択
 
 function setup() {
   const canvas = $('game');
@@ -46,6 +47,14 @@ function setup() {
     });
   }
   document.querySelector('[data-stage="1"]').click();
+  for (const btn of document.querySelectorAll('[data-special]')) {
+    btn.addEventListener('click', () => {
+      selectedSpecial = btn.dataset.special;
+      for (const b of document.querySelectorAll('[data-special]')) b.style.borderColor = '#444';
+      btn.style.borderColor = '#ffd23e';
+    });
+  }
+  document.querySelector('[data-special="storm"]').click();
   $('start').addEventListener('click', startMatch);
   $('rematch').addEventListener('click', () => show('title'));
 
@@ -69,6 +78,9 @@ function startMatch() {
     playerWeapon: selectedWeapon,
     difficulty: CONFIG.BOT.DEFAULT,
   });
+  // v2: プレイヤー (A1) のスペシャルタイプを設定
+  const player = state.entities.find(e => e.id === 'A1');
+  if (player) player.specialType = selectedSpecial;
   yaw = Math.PI / 2;
   renderer.reset(state);
   sound.play('start');

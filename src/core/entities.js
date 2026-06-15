@@ -121,6 +121,7 @@ function blocked(x, y, r, grid, sx, sy, z) {
 // 戻り値: ダウンさせたら true（FR-DMG-001）
 export function damageEntity(e, dmg) {
   if (e.state !== 'ALIVE' || e.invulnT > 0) return false;
+  if (e.barrierEnd) dmg *= 0.5; // バリア中は半減
   e.hp -= dmg;
   if (e.hp <= 0) {
     e.hp = 0; e.state = 'SPLATTED'; e.respawnT = P.RESPAWN_TIME;

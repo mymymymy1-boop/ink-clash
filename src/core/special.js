@@ -1,8 +1,13 @@
-// スペシャル: SPゲージ＋インクストーム（FR-SP-001, C-006）
+// スペシャル: SPゲージ＋スペシャルコマンド（v2: 2種類） — FR-SP-001, C-006
 import { CONFIG } from './config.js';
 import { damageEntity } from './entities.js';
 
 const S = CONFIG.SP;
+
+export const SPECIALS = {
+  STORM: 'storm',   // インクストーム
+  BARRIER: 'barrier', // インクバリア
+};
 
 export function addSP(e, newlyPaintedCells) {
   if (e.state !== 'ALIVE') return;
@@ -11,13 +16,18 @@ export function addSP(e, newlyPaintedCells) {
 
 export function canSpecial(e) { return e.state === 'ALIVE' && e.sp >= S.MAX; } // C-006: >=150
 
-// インクストーム: 前方帯（幅48×長さ320px）即時塗り＋帯内の敵に40dmg。発動でインク全回復・SP=0
 export function trySpecial(e, state) {
   if (!canSpecial(e)) return false;
+  const specialType = e.specialType || SPECIALS.STORM;
+  if (specialType === SPECIALS.BARRIER) return tryBarrier(e, state);
+  return tryStorm(e, state);
+}
+
+// インクストーム: 前方帯（幅48×長さ320px）即時塗り＋帯内の敵に40dmg。発動でインク全回復・SP=0
+function tryStorm(e, state) {
   const { grid, entities } = state;
   const r = S.STORM_W / 2;
   for (let d = 0; d <= S.STORM_LEN; d += r) {
-    // スペシャル塗りはSP再加算しない（自己増殖防止）
     grid.paintCircle(e.x + e.aimX * d, e.y + e.aimY * d, r, e.team);
   }
   for (const t of entities) {
@@ -26,7 +36,15 @@ export function trySpecial(e, state) {
       damageEntity(t, S.STORM_DMG);
     }
   }
-  e.ink = CONFIG.PLAYER.INK; // EV-SP-002: 発動でインク全回復
+  e.ink = CONFIG.PLAYER.INK;
+  e.sp = 0;
+  return true;
+}
+
+// インクバリア: 一時的にダメージ半減＆インク消費率2倍（8秒間）
+function tryBarrier(e, state) {
+  e.barrierEnd = state.time + 8;
+  e.ink = CONFIG.PLAYER.INK;
   e.sp = 0;
   return true;
 }
