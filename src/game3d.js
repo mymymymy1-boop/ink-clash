@@ -142,7 +142,7 @@ function loop(t) {
   const elapsed = Math.min(0.1, (t - last) / 1000); last = t;
   if (!state) return;
 
-  yaw += controls.consumeYawDelta();
+  yaw += controls.consumeYawDelta(elapsed); // v11: PCマウスの連続旋回はフレーム時間で積分
   if (state.phase === 'PLAY') {
     acc += elapsed;
     while (acc >= DT) {

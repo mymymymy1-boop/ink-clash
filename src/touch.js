@@ -1,8 +1,11 @@
-// スマホタッチ操作（FR-TOUCH-001/002）+ PCフォールバック（FR-TOUCH-003）+ Gamepad API（v2）
-// 左半面: 仮想スティック（移動）/ 右半面ドラッグ: カメラ旋回 / DOMボタン: 射撃・潜行・スペシャル
-// Gamepad: LStick=移動 / RStick=カメラ / LT/RT=潜行/射撃 / A=ジャンプ / Y=SP
+// スマホタッチ操作（FR-TOUCH-001/002）+ PCマウス操作（v11）+ Gamepad API（v2）
+// 【スマホ】左半面: 仮想スティック（移動）/ 右半面ドラッグ: カメラ旋回 / DOMボタン: 射撃・潜行・SP
+// 【PC】マウス移動=旋回 / 左クリック=前進 / 右クリック=潜行 / ホイールクリック=SP / Space=ショット / Enter=ジャンプ
+// 【Gamepad】LStick=移動 / RStick=カメラ / LT/RT=潜行/射撃 / A=ジャンプ / Y=SP
 const STICK_MAX = 52;
 const GAMEPAD_DEADZONE = 0.2;
+const MOUSE_TURN_DEAD = 0.10; // 画面中央付近は旋回しない不感帯（割合）
+const MOUSE_TURN_SPEED = 2.6;  // rad/s（端まで倒したときの旋回速度）
 
 export function createControls(area, els) {
   // els: { stick, stickKnob, btnFire, btnSwim, btnSp, btnJump }
@@ -10,12 +13,14 @@ export function createControls(area, els) {
     stickId: null, sx: 0, sy: 0, ox: 0, oy: 0,
     camId: null, lastX: 0, yawDelta: 0,
     fire: false, swim: false, special: false, jump: false,
-    keys: new Set(), mouseDrag: false,
+    keys: new Set(),
     gpLsx: 0, gpLsy: 0, gpRx: 0, // v2: Gamepad state
+    cursorX: innerWidth / 2, lmb: false, rmb: false, mmb: false, usedTouch: false, // v11: PCマウス
   };
 
   // --- タッチ ---
   area.addEventListener('touchstart', (ev) => {
+    state.usedTouch = true; // タッチ端末ではPCマウス旋回を無効化
     for (const t of ev.changedTouches) {
       if (t.clientX < innerWidth / 2 && state.stickId === null) {
         state.stickId = t.identifier;
@@ -64,20 +69,40 @@ export function createControls(area, els) {
   bindButton(els.btnSp, (v) => { state.special = v; });
   bindButton(els.btnJump, (v) => { state.jump = v; }); // v3
 
-  // --- PCフォールバック（FR-TOUCH-003）: Space=ジャンプ / K=潜行 / J=射撃 / E=SP ---
+  // --- PC操作（v11）: Space=ショット / Enter=ジャンプ（WASD移動も併用可） ---
   addEventListener('keydown', (ev) => {
-    if (['KeyW', 'KeyA', 'KeyS', 'KeyD', 'Space', 'KeyE', 'KeyJ', 'KeyK'].includes(ev.code)) ev.preventDefault();
+    if (['KeyW', 'KeyA', 'KeyS', 'KeyD', 'Space', 'Enter'].includes(ev.code)) ev.preventDefault();
     state.keys.add(ev.code);
   });
   addEventListener('keyup', (ev) => state.keys.delete(ev.code));
-  area.addEventListener('mousedown', (ev) => { if (ev.button === 0) { state.mouseDrag = true; state.lastX = ev.clientX; } });
-  addEventListener('mouseup', () => { state.mouseDrag = false; });
-  addEventListener('mousemove', (ev) => {
-    if (state.mouseDrag) { state.yawDelta -= (ev.clientX - state.lastX) * 0.006; state.lastX = ev.clientX; }
+  // マウス: 移動=旋回 / 左=前進 / 右=潜行 / 中=SP
+  addEventListener('mousemove', (ev) => { state.cursorX = ev.clientX; });
+  area.addEventListener('mousedown', (ev) => {
+    state.cursorX = ev.clientX;
+    if (ev.button === 0) state.lmb = true;
+    else if (ev.button === 2) state.rmb = true;
+    else if (ev.button === 1) { state.mmb = true; ev.preventDefault(); }
   });
+  addEventListener('mouseup', (ev) => {
+    if (ev.button === 0) state.lmb = false;
+    else if (ev.button === 2) state.rmb = false;
+    else if (ev.button === 1) state.mmb = false;
+  });
+  area.addEventListener('contextmenu', (ev) => ev.preventDefault()); // 右クリック=潜行のためメニュー抑制
 
-  // 消費型: カメラ旋回量を取り出す
-  function consumeYawDelta() { const d = state.yawDelta; state.yawDelta = 0; return d; }
+  // 消費型: カメラ旋回量を取り出す。dt付き呼び出しでPCマウスの連続旋回を加算
+  function consumeYawDelta(dt = 0) {
+    let d = state.yawDelta; state.yawDelta = 0;
+    if (!state.usedTouch && dt > 0) {
+      const off = (state.cursorX - innerWidth / 2) / (innerWidth / 2); // -1(左)..+1(右)
+      const m = Math.abs(off);
+      if (m > MOUSE_TURN_DEAD) {
+        const mag = (m - MOUSE_TURN_DEAD) / (1 - MOUSE_TURN_DEAD); // 不感帯外を0..1へ
+        d -= Math.sign(off) * mag * MOUSE_TURN_SPEED * dt; // カーソルが右なら右へ旋回（右=yaw減・タッチと統一）
+      }
+    }
+    return d;
+  }
 
   // Gamepad ポーリング（v2）
   function updateGamepad() {
@@ -87,7 +112,7 @@ export function createControls(area, els) {
     state.gpLsx = pad(gp.axes[0]); // LStick X
     state.gpLsy = pad(gp.axes[1]); // LStick Y
     state.gpRx = pad(gp.axes[2]) * 0.007; // RStick X → yaw delta
-    state.yawDelta += state.gpRx;
+    state.yawDelta -= state.gpRx; // RStick右=右を向く（右=yaw減・タッチと統一。v11で符号修正）
     // ボタン: LT=4, RT=5, A=0, Y=3
     state.swim = state.swim || (gp.buttons[4]?.pressed || false);
     state.fire = state.fire || (gp.buttons[5]?.pressed || false);
@@ -103,6 +128,7 @@ export function createControls(area, els) {
       sx += (state.keys.has('KeyD') ? 1 : 0) - (state.keys.has('KeyA') ? 1 : 0);
       sy += (state.keys.has('KeyS') ? 1 : 0) - (state.keys.has('KeyW') ? 1 : 0);
     }
+    if (state.lmb) sy -= 1; // v11: 左クリック長押し=前進（-y=前方）
     // クランプ
     const len = Math.hypot(sx, sy);
     if (len > 1) { sx /= len; sy /= len; }
@@ -112,10 +138,10 @@ export function createControls(area, els) {
       mx: fx * -sy + rx * sx,
       my: fy * -sy + ry * sx,
       aimX: fx, aimY: fy,
-      fire: state.fire || state.keys.has('KeyJ'),
-      swim: state.swim || state.keys.has('KeyK'),
-      special: state.special || state.keys.has('KeyE'),
-      jump: state.jump || state.keys.has('Space'), // v3
+      fire: state.fire || state.keys.has('Space'),       // v11: Space=ショット
+      swim: state.swim || state.rmb,                     // v11: 右クリック=潜行
+      special: state.special || state.mmb,               // v11: ホイールクリック=SP
+      jump: state.jump || state.keys.has('Enter'),       // v11: Enter=ジャンプ
     };
   }
 
