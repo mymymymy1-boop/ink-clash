@@ -2,7 +2,7 @@
 // 人型キャラ・高低差ステージ・パーティクル。シミュレーションは2Dコアのまま（ADR-006）。
 /* global THREE */
 import { CONFIG } from './core/config.js';
-import { obstacleRects, platformRects } from './core/stage.js';
+import { obstacleRects, platformRects, getSpawns } from './core/stage.js';
 import { createPaintCanvas } from './paintcanvas.js';
 
 const FIELD_W = CONFIG.WORLD.W, FIELD_H = CONFIG.WORLD.H; // 注: バンドル結合のためトップレベル名は全モジュールで一意にする
@@ -15,6 +15,9 @@ const PLT_H = CONFIG.TERRAIN.PLATFORM_H;
 export function createRenderer3D(canvas) {
   const renderer = new THREE.WebGLRenderer({ canvas, antialias: true });
   renderer.setPixelRatio(Math.min(2, devicePixelRatio || 1));
+  // v4-gfx: 実シャドウマップで接地感・立体感を底上げ（色味は既存のキャンバステクスチャ基準を維持）
+  renderer.shadowMap.enabled = true;
+  renderer.shadowMap.type = THREE.PCFSoftShadowMap;
 
   const scene = new THREE.Scene();
   scene.background = new THREE.Color(0x87c8ee);
@@ -55,10 +58,20 @@ export function createRenderer3D(canvas) {
   const camera = new THREE.PerspectiveCamera(66, 16 / 9, 1, 4000);
   const clock = new THREE.Clock();
 
-  scene.add(new THREE.HemisphereLight(0xe6f2ff, 0x8d8d92, 1.12)); // 地面反射はニュートラルに（インクの色被り防止）
-  const sun = new THREE.DirectionalLight(0xfffaf0, 0.95);
-  sun.position.set(300, 600, 200);
+  scene.add(new THREE.HemisphereLight(0xe6f2ff, 0x8d8d92, 1.0)); // 地面反射はニュートラルに（インクの色被り防止）
+  const sun = new THREE.DirectionalLight(0xfffaf0, 1.15);
+  sun.position.set(FIELD_W / 2 - 360, 760, FIELD_H / 2 - 480);
+  // v4-gfx: 太陽光で実影を落とす（場全体をカバーする正射影フラスタム）
+  sun.castShadow = true;
+  sun.shadow.mapSize.set(2048, 2048);
+  sun.shadow.camera.near = 100;
+  sun.shadow.camera.far = 2200;
+  sun.shadow.camera.left = -900; sun.shadow.camera.right = 900;
+  sun.shadow.camera.top = 900; sun.shadow.camera.bottom = -900;
+  sun.shadow.bias = -0.0008;
+  sun.target.position.set(FIELD_W / 2, 0, FIELD_H / 2);
   scene.add(sun);
+  scene.add(sun.target);
 
   // 床（塗りテクスチャ）
   const paint = createPaintCanvas();
@@ -70,6 +83,7 @@ export function createRenderer3D(canvas) {
   );
   floor.rotation.x = -Math.PI / 2;
   floor.position.set(FIELD_W / 2, 0, FIELD_H / 2);
+  floor.receiveShadow = true; // v4-gfx
   scene.add(floor);
 
   // 場外の地面（砂漠）
@@ -144,35 +158,46 @@ export function createRenderer3D(canvas) {
     scene.add(m);
   }
 
-  // スポーンパッド
-  for (const team of [1, 2]) {
-    const s = team === 1 ? { x: 70, y: 360 } : { x: FIELD_W - 70, y: 360 };
-    const pad = new THREE.Mesh(new THREE.CylinderGeometry(46, 50, 4, 24),
-      new THREE.MeshLambertMaterial({ color: TEAM_HEX[team] }));
-    pad.position.set(s.x, 2, s.y);
-    scene.add(pad);
-  }
-
   // 台（v4: 多層。上面に塗りテクスチャの該当領域＝塗りが台の上にも見える）
   const pltSides = [
     new THREE.MeshLambertMaterial({ color: 0xb1ada3 }),
     new THREE.MeshLambertMaterial({ color: 0xa39f96 }),
     new THREE.MeshLambertMaterial({ color: 0x969289 }),
   ];
-  const pltTexes = [];
-  for (const [x, y, w, h, level = 1] of platformRects()) {
-    const t2 = tex.clone();
-    t2.repeat.set(w / FIELD_W, h / FIELD_H);
-    t2.offset.set(x / FIELD_W, 1 - (y + h) / FIELD_H);
-    pltTexes.push(t2);
-    const topMat = new THREE.MeshLambertMaterial({ map: t2 });
-    const side = pltSides[Math.min(2, (level - 1) >> 2)];
-    const ph = level * PLT_H;
-    const m = new THREE.Mesh(new THREE.BoxGeometry(w, ph, h),
-      [side, side, topMat, side, side, side]);
-    m.position.set(x + w / 2, ph / 2, y + h / 2);
-    scene.add(m);
+  // v5: ステージ依存ジオメトリ（台・スポーンパッド）は再構築可能にする
+  let pltTexes = [];
+  let stageMeshes = [];
+  function buildStageGeometry() {
+    for (const m of stageMeshes) scene.remove(m);
+    stageMeshes = [];
+    pltTexes = [];
+    // スポーンパッド（ステージごとのスポーン位置を使う）
+    const spawns = getSpawns();
+    for (const team of [1, 2]) {
+      const s = spawns[team];
+      const pad = new THREE.Mesh(new THREE.CylinderGeometry(46, 50, 4, 24),
+        new THREE.MeshLambertMaterial({ color: TEAM_HEX[team] }));
+      pad.position.set(s.x, 2, s.y);
+      pad.receiveShadow = true;
+      scene.add(pad); stageMeshes.push(pad);
+    }
+    // 台（多層）
+    for (const [x, y, w, h, level = 1] of platformRects()) {
+      const t2 = tex.clone();
+      t2.repeat.set(w / FIELD_W, h / FIELD_H);
+      t2.offset.set(x / FIELD_W, 1 - (y + h) / FIELD_H);
+      pltTexes.push(t2);
+      const topMat = new THREE.MeshLambertMaterial({ map: t2 });
+      const side = pltSides[Math.min(2, (level - 1) >> 2)];
+      const ph = level * PLT_H;
+      const m = new THREE.Mesh(new THREE.BoxGeometry(w, ph, h),
+        [side, side, topMat, side, side, side]);
+      m.position.set(x + w / 2, ph / 2, y + h / 2);
+      m.castShadow = true; m.receiveShadow = true; // v4-gfx
+      scene.add(m); stageMeshes.push(m);
+    }
   }
+  buildStageGeometry();
 
   // ===== 人型ペイントボット =====
   const bots = new Map();
@@ -212,6 +237,7 @@ export function createRenderer3D(canvas) {
       if (m.isMesh) {
         m.material = m.material.clone();
         if (m.material.name === 'Main') m.material.color.setHex(TEAM_HEX[e.team]);
+        m.castShadow = true; // v4-gfx
       }
     });
     // アニメーション（Idle/Running/Jump）
@@ -366,6 +392,8 @@ export function createRenderer3D(canvas) {
     g.add(swim);
 
     const humanoid = [legs[0], legs[1], hip, body, head, cap, brim, gun, gunTip, tank, ...arms, ...eyes, headOutline, capOutline, bodyOutline];
+    // v4-gfx: 本体パーツが実影を落とす（輪郭線=BackSideは除外）
+    for (const m of [legs[0], legs[1], hip, body, head, cap, brim, gun, gunTip, ...arms]) m.castShadow = true;
     g.userData = { legs, arms, body, ink, swim, shadow, humanoid, lastX: e.x, lastY: e.y, phase: 0 };
     scene.add(g);
     return g;
@@ -431,6 +459,7 @@ export function createRenderer3D(canvas) {
 
   function reset(state) {
     paint.reset(state);
+    buildStageGeometry(); // v5: 選択ステージの台・スポーンを再構築
     tex.needsUpdate = true;
     for (const t2 of pltTexes) t2.needsUpdate = true;
     for (const g of bots.values()) { if (g.userData.shadow) scene.remove(g.userData.shadow); scene.remove(g); }
