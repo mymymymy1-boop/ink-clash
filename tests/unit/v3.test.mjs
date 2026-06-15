@@ -122,3 +122,57 @@ test('後方互換: eventsなしのstateでも武器処理が壊れない', () =
   for (let i = 0; i < 60 && s.bullets.length; i++) updateBullets(s, DT);
   assert.ok(true);
 });
+
+// v7: デュアル(2発)・ストリンガー(3発チャージ)・ブラッシュ(高速)の弾道
+test('TC-FR-WPN-008: デュアルは1回の発射で2弾を扇状に出す', () => {
+  const g = freshGrid();
+  const e = createEntity({ id: 'A1', team: 1, x: 300, y: 300, weaponKind: 'dualies' });
+  e.aimX = 1; e.aimY = 0;
+  const s = st(g, [e]);
+  updateWeapon(e, input({ fire: true }), s, DT);
+  const mine = s.bullets.filter((b) => b.ownerId === 'A1');
+  assert.equal(mine.length, 2);
+  assert.notEqual(mine[0].vy, mine[1].vy); // 扇状＝進行方向が異なる
+});
+
+test('TC-FR-WPN-009: ストリンガーはフルチャージ後のリリースで3弾を出す', () => {
+  const g = freshGrid();
+  const e = createEntity({ id: 'A1', team: 1, x: 300, y: 300, weaponKind: 'stringer' });
+  e.aimX = 1; e.aimY = 0;
+  const s = st(g, [e]);
+  for (let i = 0; i < 60; i++) updateWeapon(e, input({ fire: true }), s, DT); // チャージ
+  const before = s.bullets.filter((b) => b.ownerId === 'A1').length;
+  updateWeapon(e, input({ fire: false }), s, DT); // リリース
+  const after = s.bullets.filter((b) => b.ownerId === 'A1').length;
+  assert.equal(after - before, 3);
+});
+
+test('TC-FR-WPN-007: ブラッシュは短射程・超高速で従来シューターより手数が多い', () => {
+  const g = freshGrid();
+  const e = createEntity({ id: 'A1', team: 1, x: 300, y: 300, weaponKind: 'brush' });
+  e.aimX = 1; e.aimY = 0;
+  const s = st(g, [e]);
+  let shots = 0;
+  for (let i = 0; i < 60; i++) {
+    const n = s.bullets.length;
+    updateWeapon(e, input({ fire: true }), s, DT);
+    if (s.bullets.length > n) shots++;
+  }
+  assert.ok(shots >= 12, `ブラッシュは高速連射のはず: ${shots}`);
+  assert.ok(CONFIG.WEAPONS.brush.range < CONFIG.WEAPONS.shooter.range); // 短射程
+});
+
+// v8: ジャンプ台で通常ジャンプより高く打ち上がる
+test('TC-FR-PAD-001: ジャンプ台に接地すると通常ジャンプより高く打ち上がる', async () => {
+  const { createMatch, tick } = await import('../../src/core/match.js');
+  const { jumpPads } = await import('../../src/core/stage.js');
+  CONFIG.STAGE_ID = 1;
+  const pads = jumpPads();
+  assert.ok(pads.length > 0);
+  const s = createMatch({ seed: 3, playerWeapon: 'shooter' });
+  const p = s.entities.find((e) => e.id === 'A1');
+  p.x = pads[0][0]; p.y = pads[0][1]; p.z = 0; p.vz = 0; p.grounded = true;
+  tick(s, input(), DT);
+  assert.equal(p.vz, CONFIG.JUMP.PAD_V0); // 打ち上げ初速
+  assert.ok(CONFIG.JUMP.PAD_V0 > CONFIG.JUMP.V0); // 通常ジャンプより強い
+});

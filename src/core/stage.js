@@ -17,6 +17,8 @@ const STAGES = {
       [692, 40, 52, 110, 7], [744, 40, 52, 110, 8], [796, 40, 52, 110, 9],
       [848, 40, 104, 110, 10],
     ],
+    // ジャンプ台 [x, y]（v8）: 下の回廊から中央ピラミッド上段へ跳べる
+    pads: [[420, 610], [860, 610]],
   },
   // ステージ2: 分散型（左右高台・中央広大・長距離有利）
   2: {
@@ -33,6 +35,7 @@ const STAGES = {
       // 中央奥の島（L2-L3・チャージャー射程に入る）
       [540, 350, 80, 150, 2], [555, 390, 50, 100, 3],
     ],
+    pads: [[300, 200], [CONFIG.WORLD.W - 300, 200]], // 自陣から前線へ素早く展開
   },
   // ステージ3: U字形（両端高く・中央低い・近距離戦有利）
   3: {
@@ -50,6 +53,7 @@ const STAGES = {
       // 中央奥の川（狭い・L1）
       [500, 520, 80, 100, 1],
     ],
+    pads: [[640, 120], [640, 600]], // 中央を縦断する奇襲ルート
   },
   // ステージ4: 迷路型（複雑な構造・視認距離制限・ローラー有利）
   4: {
@@ -87,6 +91,11 @@ export function obstacleRects() { return []; }
 export function platformRects() {
   const platforms = STAGES[getCurrentStageId()].platforms;
   return platforms.map((r) => [...r]);
+}
+
+// v8: ジャンプ台。各ステージの pads（無ければ空）
+export function jumpPads() {
+  return (STAGES[getCurrentStageId()].pads || []).map((p) => [...p]);
 }
 
 export function getStageList() { return Object.entries(STAGES).map(([id, s]) => ({ id: parseInt(id), name: s.name })); }

@@ -2,7 +2,7 @@
 // 人型キャラ・高低差ステージ・パーティクル。シミュレーションは2Dコアのまま（ADR-006）。
 /* global THREE */
 import { CONFIG } from './core/config.js';
-import { obstacleRects, platformRects, getSpawns } from './core/stage.js';
+import { obstacleRects, platformRects, getSpawns, jumpPads } from './core/stage.js';
 import { createPaintCanvas } from './paintcanvas.js';
 
 const FIELD_W = CONFIG.WORLD.W, FIELD_H = CONFIG.WORLD.H; // 注: バンドル結合のためトップレベル名は全モジュールで一意にする
@@ -195,6 +195,24 @@ export function createRenderer3D(canvas) {
       m.position.set(x + w / 2, ph / 2, y + h / 2);
       m.castShadow = true; m.receiveShadow = true; // v4-gfx
       scene.add(m); stageMeshes.push(m);
+    }
+    // v8: ジャンプ台（黄色い円盤＋上向き三角形のインジケータ＝視認性）
+    for (const [px, py] of jumpPads()) {
+      const gp = new THREE.Group();
+      const base = new THREE.Mesh(new THREE.CylinderGeometry(CONFIG.JUMP.PAD_R, CONFIG.JUMP.PAD_R + 3, 5, 22),
+        new THREE.MeshLambertMaterial({ color: 0xffd23e, emissive: 0x4a3a00 }));
+      base.position.y = 2.5; base.receiveShadow = true;
+      gp.add(base);
+      const ring = new THREE.Mesh(new THREE.RingGeometry(CONFIG.JUMP.PAD_R - 4, CONFIG.JUMP.PAD_R, 22),
+        new THREE.MeshBasicMaterial({ color: 0xfff4c0, side: THREE.DoubleSide }));
+      ring.rotation.x = -Math.PI / 2; ring.position.y = 5.3;
+      gp.add(ring);
+      const arrow = new THREE.Mesh(new THREE.ConeGeometry(7, 14, 4),
+        new THREE.MeshBasicMaterial({ color: 0xffffff }));
+      arrow.position.y = 16; gp.add(arrow);
+      gp.position.set(px, 0, py);
+      gp.userData.padAnim = true; // draw でアニメ
+      scene.add(gp); stageMeshes.push(gp);
     }
   }
   buildStageGeometry();
@@ -584,6 +602,11 @@ export function createRenderer3D(canvas) {
     for (; bi < bulletPool.length; bi++) bulletPool[bi].visible = false;
 
     updateParts(dt);
+    // v8: ジャンプ台の矢印を上下にバウンドさせて誘目
+    const bob = Math.sin(clock.elapsedTime * 4);
+    for (const m of stageMeshes) {
+      if (m.userData.padAnim) { m.children[2].position.y = 16 + bob * 3; m.children[2].rotation.y += dt * 2; }
+    }
     for (const m of mixers.values()) m.mixer.update(dt);
 
     const p = state.entities.find((e) => e.id === playerId) || state.entities[0];

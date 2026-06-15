@@ -4351,7 +4351,7 @@ const CONFIG = {
     WALL_H: 44,          // 外周等のOBSTACLE高さ＝弾はこれ未満なら遮られる
     CLIMB_MARGIN: 6,     // この高さ差まで登り許容
   },
-  JUMP: { V0: 210, GRAVITY: 600 }, // 初速210/重力600 → 頂点約36>台26で登れる
+  JUMP: { V0: 210, GRAVITY: 600, PAD_V0: 430, PAD_R: 22 }, // 初速210/重力600。v8: ジャンプ台は初速430・判定半径22
   PLAYER: {
     HP: 100, INK: 100, SPEED: 150, RADIUS: 13,
     SWIM_MULT: 1.8,            // FR-INK-002
@@ -4560,6 +4560,8 @@ const STAGES = {
       [692, 40, 52, 110, 7], [744, 40, 52, 110, 8], [796, 40, 52, 110, 9],
       [848, 40, 104, 110, 10],
     ],
+    // ジャンプ台 [x, y]（v8）: 下の回廊から中央ピラミッド上段へ跳べる
+    pads: [[420, 610], [860, 610]],
   },
   // ステージ2: 分散型（左右高台・中央広大・長距離有利）
   2: {
@@ -4576,6 +4578,7 @@ const STAGES = {
       // 中央奥の島（L2-L3・チャージャー射程に入る）
       [540, 350, 80, 150, 2], [555, 390, 50, 100, 3],
     ],
+    pads: [[300, 200], [CONFIG.WORLD.W - 300, 200]], // 自陣から前線へ素早く展開
   },
   // ステージ3: U字形（両端高く・中央低い・近距離戦有利）
   3: {
@@ -4593,6 +4596,7 @@ const STAGES = {
       // 中央奥の川（狭い・L1）
       [500, 520, 80, 100, 1],
     ],
+    pads: [[640, 120], [640, 600]], // 中央を縦断する奇襲ルート
   },
   // ステージ4: 迷路型（複雑な構造・視認距離制限・ローラー有利）
   4: {
@@ -4630,6 +4634,11 @@ function obstacleRects() { return []; }
 function platformRects() {
   const platforms = STAGES[getCurrentStageId()].platforms;
   return platforms.map((r) => [...r]);
+}
+
+// v8: ジャンプ台。各ステージの pads（無ければ空）
+function jumpPads() {
+  return (STAGES[getCurrentStageId()].pads || []).map((p) => [...p]);
 }
 
 function getStageList() { return Object.entries(STAGES).map(([id, s]) => ({ id: parseInt(id), name: s.name })); }
@@ -5260,10 +5269,17 @@ function tick(state, playerInput = NO_INPUT, dt = 1 / 60) {
   if (state.phase !== 'PLAY') return; // C-005: RESULT後は状態不変
   if (state.events) state.events.length = 0; // v3: イベントは1tickで消費
 
+  const pads = state.jumpPads || (state.jumpPads = jumpPads());
   for (const e of state.entities) {
     const input = e.isPlayer ? playerInput : botThink(e, botMem(state, e), state, state.rng, dt);
     updateEntity(e, input, state.grid, dt);
     if (e.justJumped) state.events?.push({ type: 'jump', x: e.x, y: e.y, team: e.team });
+    // v8: ジャンプ台に接地したら大ジャンプで打ち上げ（クールダウンで連発抑制）
+    if (e.padCd > 0) e.padCd -= dt;
+    if (e.state === 'ALIVE' && e.grounded && (e.padCd || 0) <= 0 && onJumpPad(e, pads)) {
+      e.vz = CONFIG.JUMP.PAD_V0; e.grounded = false; e.padCd = 0.5;
+      state.events?.push({ type: 'jump', x: e.x, y: e.y, team: e.team });
+    }
     if (e.state === 'ALIVE') {
       if (input.special && trySpecial(e, state)) state.events?.push({ type: 'special', x: e.x, y: e.y, team: e.team });
       updateWeapon(e, input, state, dt);
@@ -5273,6 +5289,14 @@ function tick(state, playerInput = NO_INPUT, dt = 1 / 60) {
 
   state.time -= dt;
   if (state.time <= 0) finalize(state);
+}
+
+function onJumpPad(e, pads) {
+  const r2 = CONFIG.JUMP.PAD_R * CONFIG.JUMP.PAD_R;
+  for (const [px, py] of pads) {
+    if ((e.x - px) ** 2 + (e.y - py) ** 2 <= r2) return true;
+  }
+  return false;
 }
 
 function botMem(state, e) {
@@ -5668,6 +5692,24 @@ function createRenderer3D(canvas) {
       m.castShadow = true; m.receiveShadow = true; // v4-gfx
       scene.add(m); stageMeshes.push(m);
     }
+    // v8: ジャンプ台（黄色い円盤＋上向き三角形のインジケータ＝視認性）
+    for (const [px, py] of jumpPads()) {
+      const gp = new THREE.Group();
+      const base = new THREE.Mesh(new THREE.CylinderGeometry(CONFIG.JUMP.PAD_R, CONFIG.JUMP.PAD_R + 3, 5, 22),
+        new THREE.MeshLambertMaterial({ color: 0xffd23e, emissive: 0x4a3a00 }));
+      base.position.y = 2.5; base.receiveShadow = true;
+      gp.add(base);
+      const ring = new THREE.Mesh(new THREE.RingGeometry(CONFIG.JUMP.PAD_R - 4, CONFIG.JUMP.PAD_R, 22),
+        new THREE.MeshBasicMaterial({ color: 0xfff4c0, side: THREE.DoubleSide }));
+      ring.rotation.x = -Math.PI / 2; ring.position.y = 5.3;
+      gp.add(ring);
+      const arrow = new THREE.Mesh(new THREE.ConeGeometry(7, 14, 4),
+        new THREE.MeshBasicMaterial({ color: 0xffffff }));
+      arrow.position.y = 16; gp.add(arrow);
+      gp.position.set(px, 0, py);
+      gp.userData.padAnim = true; // draw でアニメ
+      scene.add(gp); stageMeshes.push(gp);
+    }
   }
   buildStageGeometry();
 
@@ -6056,6 +6098,11 @@ function createRenderer3D(canvas) {
     for (; bi < bulletPool.length; bi++) bulletPool[bi].visible = false;
 
     updateParts(dt);
+    // v8: ジャンプ台の矢印を上下にバウンドさせて誘目
+    const bob = Math.sin(clock.elapsedTime * 4);
+    for (const m of stageMeshes) {
+      if (m.userData.padAnim) { m.children[2].position.y = 16 + bob * 3; m.children[2].rotation.y += dt * 2; }
+    }
     for (const m of mixers.values()) m.mixer.update(dt);
 
     const p = state.entities.find((e) => e.id === playerId) || state.entities[0];

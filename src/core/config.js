@@ -9,7 +9,7 @@ export const CONFIG = {
     WALL_H: 44,          // 外周等のOBSTACLE高さ＝弾はこれ未満なら遮られる
     CLIMB_MARGIN: 6,     // この高さ差まで登り許容
   },
-  JUMP: { V0: 210, GRAVITY: 600 }, // 初速210/重力600 → 頂点約36>台26で登れる
+  JUMP: { V0: 210, GRAVITY: 600, PAD_V0: 430, PAD_R: 22 }, // 初速210/重力600。v8: ジャンプ台は初速430・判定半径22
   PLAYER: {
     HP: 100, INK: 100, SPEED: 150, RADIUS: 13,
     SWIM_MULT: 1.8,            // FR-INK-002

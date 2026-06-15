@@ -4,7 +4,7 @@ import { PaintGrid } from './grid.js';
 import { createEntity, updateEntity, NO_INPUT } from './entities.js';
 import { updateWeapon, updateBullets } from './weapons.js';
 import { trySpecial } from './special.js';
-import { applyStage, getSpawns } from './stage.js';
+import { applyStage, getSpawns, jumpPads } from './stage.js';
 import { createBotMemory, botThink } from './bots.js';
 import { mulberry32 } from './rng.js';
 
@@ -49,10 +49,17 @@ export function tick(state, playerInput = NO_INPUT, dt = 1 / 60) {
   if (state.phase !== 'PLAY') return; // C-005: RESULT後は状態不変
   if (state.events) state.events.length = 0; // v3: イベントは1tickで消費
 
+  const pads = state.jumpPads || (state.jumpPads = jumpPads());
   for (const e of state.entities) {
     const input = e.isPlayer ? playerInput : botThink(e, botMem(state, e), state, state.rng, dt);
     updateEntity(e, input, state.grid, dt);
     if (e.justJumped) state.events?.push({ type: 'jump', x: e.x, y: e.y, team: e.team });
+    // v8: ジャンプ台に接地したら大ジャンプで打ち上げ（クールダウンで連発抑制）
+    if (e.padCd > 0) e.padCd -= dt;
+    if (e.state === 'ALIVE' && e.grounded && (e.padCd || 0) <= 0 && onJumpPad(e, pads)) {
+      e.vz = CONFIG.JUMP.PAD_V0; e.grounded = false; e.padCd = 0.5;
+      state.events?.push({ type: 'jump', x: e.x, y: e.y, team: e.team });
+    }
     if (e.state === 'ALIVE') {
       if (input.special && trySpecial(e, state)) state.events?.push({ type: 'special', x: e.x, y: e.y, team: e.team });
       updateWeapon(e, input, state, dt);
@@ -62,6 +69,14 @@ export function tick(state, playerInput = NO_INPUT, dt = 1 / 60) {
 
   state.time -= dt;
   if (state.time <= 0) finalize(state);
+}
+
+function onJumpPad(e, pads) {
+  const r2 = CONFIG.JUMP.PAD_R * CONFIG.JUMP.PAD_R;
+  for (const [px, py] of pads) {
+    if ((e.x - px) ** 2 + (e.y - py) ** 2 <= r2) return true;
+  }
+  return false;
 }
 
 function botMem(state, e) {
