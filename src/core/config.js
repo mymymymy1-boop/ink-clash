@@ -71,6 +71,7 @@ export const CONFIG = {
     DEFAULT: 'NORMAL',
     DETECT_MULT: 1.2, STUCK_TIME: 2, RAY_AHEAD: 40, REPATH_TIME: 4,
   },
+  STAGE_ID: 1, // v5: ステージ選択（1-4）
   BRANDING: { // LAW-001 / W-001: 全てオリジナル
     TITLE: 'INK CLASH',
     TEAM_COLORS: { 1: '#FF6B1A', 2: '#00B8A9' },

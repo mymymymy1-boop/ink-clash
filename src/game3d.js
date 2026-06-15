@@ -38,6 +38,14 @@ function setup() {
     });
   }
   document.querySelector('[data-weapon="shooter"]').classList.add('sel');
+  for (const btn of document.querySelectorAll('[data-stage]')) {
+    btn.addEventListener('click', () => {
+      CONFIG.STAGE_ID = parseInt(btn.dataset.stage);
+      for (const b of document.querySelectorAll('[data-stage]')) b.style.borderColor = '#444';
+      btn.style.borderColor = '#ff6b1a';
+    });
+  }
+  document.querySelector('[data-stage="1"]').click();
   $('start').addEventListener('click', startMatch);
   $('rematch').addEventListener('click', () => show('title'));
 

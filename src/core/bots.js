@@ -1,6 +1,6 @@
 // CPUボットAI: PAINT/FIGHT/RETREAT 3状態（FR-BOT-001/002, REV-R1-006/102）
 import { CONFIG } from './config.js';
-import { SPAWNS } from './stage.js';
+import { getSpawns } from './stage.js';
 import { canSpecial } from './special.js';
 
 const B = CONFIG.BOT;
@@ -31,7 +31,8 @@ export function botThink(bot, mem, state, rng, dt) {
   const input = { mx: 0, my: 0, aimX: bot.aimX, aimY: bot.aimY, fire: false, swim: false, special: false, jump: false };
 
   if (mode === 'RETREAT') {
-    const s = SPAWNS[bot.team];
+    const spawns = getSpawns();
+    const s = spawns[bot.team];
     setMove(input, bot, s.x, s.y, state, mem, rng);
     input.swim = true; // 自インク上で高速回復（FR-INK-002）
   } else if (mode === 'FIGHT' && enemy) {

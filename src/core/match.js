@@ -4,7 +4,7 @@ import { PaintGrid } from './grid.js';
 import { createEntity, updateEntity, NO_INPUT } from './entities.js';
 import { updateWeapon, updateBullets } from './weapons.js';
 import { trySpecial } from './special.js';
-import { applyStage, SPAWNS } from './stage.js';
+import { applyStage, getSpawns } from './stage.js';
 import { createBotMemory, botThink } from './bots.js';
 import { mulberry32 } from './rng.js';
 
@@ -17,8 +17,9 @@ export function createMatch({ seed = 1, playerWeapon = 'shooter', difficulty = C
 
   const entities = [];
   const botMems = new Map();
+  const spawns = getSpawns();
   for (const team of [1, 2]) {
-    const s = SPAWNS[team];
+    const s = spawns[team];
     for (let i = 0; i < CONFIG.MATCH.TEAM_SIZE; i++) {
       const isPlayer = team === 1 && i === 0 && !playerAuto;
       const id = `${team === 1 ? 'A' : 'B'}${i + 1}`;
