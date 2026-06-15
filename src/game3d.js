@@ -17,6 +17,7 @@ let yaw = Math.PI / 2; // 初期: フィールド中央（+x方向）を向く
 let selectedWeapon = 'shooter';
 let selectedSpecial = 'storm'; // v2: スペシャル選択
 let selectedDifficulty = 'NORMAL'; // v6: 難易度選択
+let prevHp = 100; // v10: 被弾フラッシュ用
 
 function setup() {
   const canvas = $('game');
@@ -91,6 +92,7 @@ function startMatch() {
   const player = state.entities.find(e => e.id === 'A1');
   if (player) player.specialType = selectedSpecial;
   yaw = Math.PI / 2;
+  prevHp = 100; // v10
   renderer.reset(state);
   sound.play('start');
   sound.startBGM();
@@ -156,6 +158,13 @@ function loop(t) {
 
 function updateHUD() {
   const h = hudModel(state, 'A1');
+  // v10: 被弾フラッシュ（HPが減ったら赤い縁を一瞬光らせる）
+  if (h.hpPct < prevHp - 0.5 && !h.splatted) {
+    const df = $('damage-flash');
+    df.classList.add('hit');
+    setTimeout(() => df.classList.remove('hit'), 60);
+  }
+  prevHp = h.splatted ? 100 : h.hpPct;
   $('time').textContent = h.timeText;
   $('ink-bar').style.width = `${h.inkPct}%`;
   $('hp-bar').style.width = `${h.hpPct}%`;
@@ -176,8 +185,8 @@ function showResult() {
   sound.play(r.winner === 1 ? 'win' : 'lose');
   $('result-title').textContent = r.winner === 0 ? '引き分け！' : r.winner === 1 ? 'WIN！' : 'LOSE…';
   $('result-title').style.color = r.winner === 0 ? '#fff' : CONFIG.BRANDING.TEAM_COLORS[r.winner];
-  $('result-a').textContent = `${CONFIG.BRANDING.TEAM_NAMES[1]} ${(r.pctA * 100).toFixed(1)}%`;
-  $('result-b').textContent = `${CONFIG.BRANDING.TEAM_NAMES[2]} ${(r.pctB * 100).toFixed(1)}%`;
+  $('result-a').textContent = `${CONFIG.BRANDING.TEAM_NAMES[1]} ${(r.pctA * 100).toFixed(1)}% (${r.countA})`;
+  $('result-b').textContent = `${CONFIG.BRANDING.TEAM_NAMES[2]} ${(r.pctB * 100).toFixed(1)}% (${r.countB})`;
   $('result-bar-a').style.width = `${(r.pctA / (r.pctA + r.pctB || 1)) * 100}%`;
   show('result');
 }

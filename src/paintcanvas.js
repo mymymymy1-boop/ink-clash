@@ -1,5 +1,6 @@
 // 床塗りテクスチャ: PaintGrid → 2D Canvas（ADR-007: THREE.CanvasTextureの元絵）
 import { CONFIG } from './core/config.js';
+import { getSpawns } from './core/stage.js';
 
 // 参考画像分析(2026-06-12): 本物は「明るい無彩色の地面 × 超高彩度インク」。
 // インクは縁が濃く・中央が明るい立体的なしぶき。
@@ -33,12 +34,14 @@ export function createPaintCanvas() {
       ctx.fillStyle = (h & 1) ? 'rgba(0,0,0,.05)' : 'rgba(255,255,255,.07)';
       ctx.fillRect((h % W), ((h >> 11) % H), 2.2, 2.2);
     }
-    // スポーンエリアのチームカラーリング
-    for (const [team, sx] of [[1, 70], [2, W - 70]]) {
+    // スポーンエリアのチームカラーリング（v10: ステージごとのスポーン座標に追従）
+    const spawns = getSpawns();
+    for (const team of [1, 2]) {
+      const sp = spawns[team];
       ctx.strokeStyle = COLORS.ink[team]; ctx.lineWidth = 7;
-      ctx.beginPath(); ctx.arc(sx, 360, 62, 0, Math.PI * 2); ctx.stroke();
+      ctx.beginPath(); ctx.arc(sp.x, sp.y, 62, 0, Math.PI * 2); ctx.stroke();
       ctx.strokeStyle = COLORS.inkDark[team]; ctx.lineWidth = 2.5;
-      ctx.beginPath(); ctx.arc(sx, 360, 70, 0, Math.PI * 2); ctx.stroke();
+      ctx.beginPath(); ctx.arc(sp.x, sp.y, 70, 0, Math.PI * 2); ctx.stroke();
     }
     const g = state.grid;
     for (let i = 0; i < g.cells.length; i++) {
