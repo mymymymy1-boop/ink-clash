@@ -5961,9 +5961,11 @@ function createRenderer3D(canvas) {
 }
 
 // ===== src/touch.js =====
-// スマホタッチ操作（FR-TOUCH-001/002）+ PCフォールバック（FR-TOUCH-003）
+// スマホタッチ操作（FR-TOUCH-001/002）+ PCフォールバック（FR-TOUCH-003）+ Gamepad API（v2）
 // 左半面: 仮想スティック（移動）/ 右半面ドラッグ: カメラ旋回 / DOMボタン: 射撃・潜行・スペシャル
+// Gamepad: LStick=移動 / RStick=カメラ / LT/RT=潜行/射撃 / A=ジャンプ / Y=SP
 const STICK_MAX = 52;
+const GAMEPAD_DEADZONE = 0.2;
 
 function createControls(area, els) {
   // els: { stick, stickKnob, btnFire, btnSwim, btnSp, btnJump }
@@ -5972,6 +5974,7 @@ function createControls(area, els) {
     camId: null, lastX: 0, yawDelta: 0,
     fire: false, swim: false, special: false, jump: false,
     keys: new Set(), mouseDrag: false,
+    gpLsx: 0, gpLsy: 0, gpRx: 0, // v2: Gamepad state
   };
 
   // --- タッチ ---
@@ -6039,13 +6042,33 @@ function createControls(area, els) {
   // 消費型: カメラ旋回量を取り出す
   function consumeYawDelta() { const d = state.yawDelta; state.yawDelta = 0; return d; }
 
+  // Gamepad ポーリング（v2）
+  function updateGamepad() {
+    const gp = navigator.getGamepads?.()?.[0];
+    if (!gp) return;
+    const pad = (v) => (Math.abs(v) > GAMEPAD_DEADZONE ? v : 0);
+    state.gpLsx = pad(gp.axes[0]); // LStick X
+    state.gpLsy = pad(gp.axes[1]); // LStick Y
+    state.gpRx = pad(gp.axes[2]) * 0.007; // RStick X → yaw delta
+    state.yawDelta += state.gpRx;
+    // ボタン: LT=4, RT=5, A=0, Y=3
+    state.swim = state.swim || (gp.buttons[4]?.pressed || false);
+    state.fire = state.fire || (gp.buttons[5]?.pressed || false);
+    state.jump = state.jump || (gp.buttons[0]?.pressed || false);
+    state.special = state.special || (gp.buttons[3]?.pressed || false);
+  }
+
   // カメラ相対の移動入力（logic 2D）。yaw前方=(sin,cos)
   function getInput(yaw) {
-    let sx = state.sx, sy = state.sy;
+    updateGamepad(); // v2: Gamepad ポーリング
+    let sx = state.sx + state.gpLsx, sy = state.sy + state.gpLsy;
     if (state.keys.size) {
       sx += (state.keys.has('KeyD') ? 1 : 0) - (state.keys.has('KeyA') ? 1 : 0);
       sy += (state.keys.has('KeyS') ? 1 : 0) - (state.keys.has('KeyW') ? 1 : 0);
     }
+    // クランプ
+    const len = Math.hypot(sx, sy);
+    if (len > 1) { sx /= len; sy /= len; }
     const fx = Math.sin(yaw), fy = Math.cos(yaw);   // 前方
     const rx = -fy, ry = fx;                         // 右方 = forward×up（v3.3: 左右リバース修正）
     return {
